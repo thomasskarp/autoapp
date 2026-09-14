@@ -1,47 +1,47 @@
-﻿# 🤝 Guía de Contribución — AutoApp
+﻿# 🤝 Contributing to AutoApp
 
-¡Gracias por tu interés en contribuir a AutoApp! Valoramos todas las colaboraciones, desde correcciones ortográficas en la documentación hasta optimizaciones de rendimiento y mejoras en las integraciones.
+Thank you for your interest in contributing to AutoApp! We welcome all contributions, from bug reports and documentation polish to performance enhancements and new integration connectors.
 
-## Código de Conducta
+## Code of Conduct
 
-Buscamos mantener un ambiente colaborativo, respetuoso, constructivo y humilde. Reconocemos que el desarrollo de software es un proceso de aprendizaje continuo y valoramos la diversidad de opiniones y enfoques técnicos.
+We are dedicated to maintaining a collaborative, welcoming, and humble engineering culture. We believe great software is built through steady learning and mutual respect across all skill levels.
 
-## ¿Cómo Empezar?
+## How to Get Started
 
-1. **Haz un Fork** del repositorio en GitHub.
-2. **Crea una rama descriptiva** para tu aporte:
+1. **Fork** the repository on GitHub.
+2. **Create a feature branch**:
    ```bash
-   git checkout -b feature/nueva-funcionalidad
-   # o
-   git checkout -b fix/correccion-error
+   git checkout -b feature/your-feature-name
+   # or
+   git checkout -b fix/issue-description
    ```
-3. **Instala las dependencias y corre los tests**:
+3. **Install dependencies and test compilation**:
    ```bash
    npm install
    npm run build
    ```
-4. **Prueba los scripts modulares** para comprobar que no existan regresiones en seguridad o rendimiento:
+4. **Run the modular verification test scripts**:
    ```bash
    node scripts/test_security_phase1.mjs
    node scripts/test_phase2_performance.mjs
    ```
 
-## Estándares de Código
+## Code Standards
 
-- **Tipado estricto:** Mantener las normas de TypeScript (`strict: true`) sin usar `any` injustificado.
-- **Validación con Zod:** Toda entrada o salida de IA / APIs externas debe contar con su esquema tipado.
-- **Mensajes de Commit:** Preferimos la convención Conventional Commits:
-  - `feat:` Nueva funcionalidad
-  - `fix:` Corrección de bug
-  - `docs:` Cambios en documentación
-  - `refactor:` Refactorización sin alterar comportamiento
-  - `perf:` Mejoras de rendimiento
-  - `test:` Inclusión o ajuste de suites de prueba
+- **Strict Typing:** Adhere to TypeScript standards (`strict: true`) without bypassing types with ungrounded `any`.
+- **Validation Schemas:** Every AI or external API interaction must have a corresponding typed `Zod` schema.
+- **Commit Messages:** Follow the Conventional Commits specification:
+  - `feat:` New feature
+  - `fix:` Bug fix
+  - `docs:` Documentation changes
+  - `refactor:` Code restructuring without behavior changes
+  - `perf:` Performance improvements
+  - `test:` Test suite additions or adjustments
 
-## Envío de Pull Requests
+## Submitting Pull Requests
 
-1. Asegúrate de que el código compila limpiamente (`npm run build` sin errores).
-2. Documenta claramente en la descripción del PR qué problema resuelve y cómo fue verificado.
-3. Mantén los cambios lo más atómicos y focalizados posible.
+1. Ensure the code compiles cleanly (`npm run build` succeeds).
+2. Clearly describe the problem solved, architectural rationale, and verification steps in your PR description.
+3. Keep changes as atomic and focused as possible.
 
-¡Muchas gracias por colaborar!
+Thank you for helping improve AutoApp!

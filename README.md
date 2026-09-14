@@ -1,4 +1,4 @@
-# 🚗 AutoApp — Ecosistema SaaS B2B Automotriz & Copiloto Comercial
+﻿# 🚗 AutoApp — Automotive B2B SaaS Ecosystem & Sales Copilot
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.3.2-black?logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2.8-blue?logo=react)](https://react.dev/)
@@ -8,211 +8,211 @@
 [![Docker](https://img.shields.io/badge/Docker-Alpine%20140MB-2496ED?logo=docker)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-Plataforma SaaS B2B desarrollada para modernizar y conectar los flujos de trabajo operativos en concesionarias y agencias de vehículos: gestión de inventario (0KM y Usados), tasación ágil basada en catálogo de mercado, publicación centralizada multicanal y seguimiento de prospectos comerciales asistido por modelos de lenguaje.
+An enterprise-ready B2B SaaS platform engineered to streamline and connect automotive dealership operations: unified inventory management (brand new and pre-owned), high-speed market valuation based on official catalogs, automated multichannel publishing, and intelligent prospect follow-up powered by structured LLM workflows.
 
 ---
 
-## 📌 Contexto y Problema que Resuelve
+## 📌 Context & Real-World Problem
 
-En el comercio automotriz tradicional, las concesionarias suelen enfrentar fricciones operativas diarias:
-1. **Dispersión de información:** El inventario vive en planillas de cálculo, los prospectos se dispersan en múltiples chats de WhatsApp y las publicaciones deben cargarse manualmente una por una en cada portal.
-2. **Tasaciones lentas o inconsistentes:** Consultar catálogos oficiales (como InfoAuto con más de 8,000 modelos) mediante PDFs o búsquedas rígidas genera demoras de varios minutos frente al cliente y márgenes de permuta difíciles de estandarizar.
-3. **Fragilidad en integraciones:** Conectar APIs de terceros (como MercadoLibre VIS) en entornos sin servidor (*Serverless*) suele ocasionar pérdida de tokens o fallas de sesión si no se gestiona una rotación transaccional persistente.
+Automotive retail operations across Latin America frequently struggle with fragmented daily workflows:
+1. **Scattered Information:** Inventory is maintained in disconnected spreadsheets, sales leads are lost across personal WhatsApp conversations, and listings must be manually typed into multiple classified portals.
+2. **Slow, Inconsistent Valuations:** Reviewing official pricing books (such as InfoAuto with 8,000+ car models) using static PDFs or rigid lookups takes several minutes per customer, making trade-in margins difficult to standardize.
+3. **Fragile Third-Party Integrations:** Integrating external APIs (such as MercadoLibre VIS) inside serverless environments often leads to expired tokens or session failures without transactional credential rotation.
 
-**AutoApp** fue concebido para resolver estas problemáticas a través de una arquitectura limpia, segura y orientada a la experiencia del asesor comercial.
+**AutoApp** was designed to address these pain points with a clean, decoupled, and resilient architecture tailored to dealership sales advisors and operations managers.
 
 ---
 
-## 🏗️ Arquitectura del Sistema
+## 🏗️ System Architecture
 
-El ecosistema está construido en capas desacopladas que priorizan resiliencia, rendimiento y seguridad:
+The ecosystem is built across decoupled layers prioritizing resilience, sub-millisecond data access, and strict security boundaries:
 
 ```mermaid
 flowchart TB
-    subgraph CLIENTES ["📱 Clientes & Extensiones"]
-        WEB["💻 Portal Web Concesionaria (Next.js 16 / React 19)"]
-        EXT["🧩 Extensión Auto-Cyborg 360 (Manifest V3)"]
+    subgraph CLIENTS ["📱 Client Layer & Extensions"]
+        WEB["💻 Dealership Web App (Next.js 16 / React 19)"]
+        EXT["🧩 Auto-Cyborg 360 Chrome Extension (Manifest V3)"]
     end
 
-    subgraph SEGURIDAD ["🛡️ Borde & Middleware"]
-        AUTH_GUARD["JWT Criptográfico Fail-Closed (src/proxy.ts)"]
-        SSRF_GUARD["Anti-SSRF Proxy (/api/proxy-image)"]
+    subgraph SECURITY ["🛡️ Edge Security & Middleware"]
+        AUTH_GUARD["Cryptographic Fail-Closed JWT (src/proxy.ts)"]
+        SSRF_GUARD["Anti-SSRF Image Proxy (/api/proxy-image)"]
     end
 
-    subgraph NUCLEO ["⚙️ Núcleo SaaS"]
-        STOCK["🚗 Stock & Catálogo Paginado"]
-        CRM["📊 CRM Kanban Realtime (@dnd-kit)"]
-        VALUATION["📐 Motor de Cotización InfoAuto (< 5ms)"]
-        AI_ENGINE["🧠 Copiloto Comercial (Gemini 2.5 Flash + Zod)"]
+    subgraph CORE ["⚙️ SaaS Core"]
+        STOCK["🚗 Inventory & Batched Catalog"]
+        CRM["📊 Realtime Kanban CRM (@dnd-kit)"]
+        VALUATION["📐 InfoAuto Valuation Engine (< 5ms)"]
+        AI_ENGINE["🧠 Commercial Copilot (Gemini 2.5 Flash + Zod)"]
     end
 
-    subgraph DATOS ["🗄️ Persistencia"]
+    subgraph DATA ["🗄️ Persistence & Storage"]
         PG["PostgreSQL (Supabase) + pg_trgm GIN Index"]
-        REALTIME["WebSocket Realtime (PostgreSQL Logical Replication)"]
-        STORAGE["Supabase Storage (Fotos / S3 CDN)"]
+        REALTIME["WebSocket Engine (PostgreSQL Logical Replication)"]
+        STORAGE["Supabase Storage (Vehicle Photos / S3 CDN)"]
     end
 
-    subgraph CANALES ["🌐 Canales Externos"]
+    subgraph CHANNELS ["🌐 External Ecosystem"]
         MELI["🟡 MercadoLibre VIS API (MLA1744)"]
         FB["🔵 Facebook Marketplace"]
         WA["🟢 WhatsApp Business / Bot Companion"]
     end
 
-    CLIENTES --> SEGURIDAD
-    SEGURIDAD --> NUCLEO
-    NUCLEO <--> DATOS
-    DATOS --> REALTIME --> CRM
-    NUCLEO --> CANALES
-    EXT <--> CANALES
+    CLIENTS --> SECURITY
+    SECURITY --> CORE
+    CORE <--> DATA
+    DATA --> REALTIME --> CRM
+    CORE --> CHANNELS
+    EXT <--> CHANNELS
 ```
 
-Para una descripción exhaustiva de contratos, diagramas de secuencia, relaciones de base de datos y diseño de microservicios, consulta [MAPA_COMPLETO_AUTOAPP.md](./MAPA_COMPLETO_AUTOAPP.md).
+For complete relational schemas, sequence diagrams, and microservice definitions, refer to [MAPA_COMPLETO_AUTOAPP.md](./MAPA_COMPLETO_AUTOAPP.md).
 
 ---
 
-## 🚀 Funcionalidades Principales
+## 🚀 Key Features
 
-### 1. Motor de Tasación Ultrarrápido (< 5ms)
-- **Base de Datos Especializada:** Indexación de más de 8,184 versiones de vehículos mediante la extensión `pg_trgm` de PostgreSQL y un índice invertido generalizado (`GIN`).
-- **Resiliencia de Búsqueda:** Fallback automático a memoria estructurada (`Map O(1)`) en caso de interrupción momentánea de conexión, asegurando alta disponibilidad.
-- **Caché RFC 7234:** Cabeceras `s-maxage=3600, stale-while-revalidate=86400` para resolver consultas frecuentes en el Edge.
+### 1. High-Speed Valuation Engine (< 5ms)
+- **Domain-Specific Database Indexing:** Full catalog indexing of 8,184 vehicle models utilizing PostgreSQL `pg_trgm` and Generalized Inverted Indexes (`GIN`).
+- **Resilient Fallback:** Automatic failover to an in-memory structured index (`Map O(1)`) during temporary connection drops, ensuring high availability.
+- **RFC 7234 Edge Caching:** `s-maxage=3600, stale-while-revalidate=86400` headers resolving repeated requests directly at the edge in `< 50ms`.
 
-### 2. CRM Comercial Kanban con Sincronización en Vivo
-- **Pipeline Visual:** Tablero Drag & Drop implementado con `@dnd-kit` y paginación por lotes de 12 tarjetas para mantener 60 FPS estables.
-- **Supabase Realtime:** Cambios de estado y nuevos mensajes sincronizados vía WebSocket sin recargar la página.
-- **Lead Intelligence:** Clasificación de temperatura de compra (🔥 Caliente, 🟡 Tibio, ❄️ Frío) y sugerencia de *Next Best Action* con generación de respuesta rápida para WhatsApp con un solo clic.
+### 2. Real-Time Kanban CRM
+- **Smooth Drag-and-Drop Pipeline:** Built on top of `@dnd-kit/core` and `@dnd-kit/sortable`, featuring batched rendering (12 cards per stage) to guarantee smooth 60 FPS performance.
+- **Supabase Realtime Sync:** Stage updates, lead status transitions, and incoming messages are synced via WebSockets without browser refreshes.
+- **Lead Intelligence Copilot:** Heuristic & semantic lead temperature scoring (🔥 Hot, 🟡 Warm, ❄️ Cold) with suggested *Next Best Action* and single-click WhatsApp response generation.
 
-### 3. Publicador Multicanal Asistido por IA
-- **Structured Outputs deterministas:** Uso de esquemas `Zod` con el SDK oficial `@google/genai` (modelo `gemini-2.5-flash`) para redactar copys persuasivos adaptados simultáneamente a los formatos de Instagram, Facebook Marketplace, MercadoLibre y WhatsApp.
-- **MercadoLibre VIS API:** Flujo OAuth 2.0 con persistencia transaccional y rotación automática de credenciales (`refresh_token`) ante respuestas `401 Unauthorized`.
-- **Extensión Auto-Cyborg 360:** Asistente en Chrome (Manifest V3) que aprovecha un hash bridge seguro (`#autoapp=...`) para autocompletar formularios en portales clasificados.
+### 3. Multichannel Publishing with Structured AI Outputs
+- **Deterministic Structured Outputs:** Enforces `Zod` schemas via the `@google/genai` SDK (`gemini-2.5-flash`) to generate high-converting copy adapted simultaneously for Instagram, Facebook Marketplace, MercadoLibre, and WhatsApp.
+- **MercadoLibre VIS API (Category MLA1744):** Full OAuth 2.0 flow with transactional token persistence and automated `refresh_token` renewal on `401 Unauthorized` responses.
+- **Auto-Cyborg 360 Extension:** Companion Chrome Extension (Manifest V3) utilizing a secure hash bridge (`#autoapp=...`) to assist sales reps with one-click form completion on third-party portals.
 
 ---
 
-## 🛡️ Enfoque de Seguridad & Buenas Prácticas
+## 🛡️ Security & Defensive Engineering
 
-Durante el proceso de diseño y auditoría técnica, se implementaron medidas para garantizar un entorno confiable:
+During our architectural audits, production security controls were implemented following OWASP best practices:
 
-| Componente | Vulnerabilidad Mitigada | Solución Implementada |
+| Component | Vulnerability Mitigated | Implementation |
 | :--- | :--- | :--- |
-| **Middleware de Rutas** | Bypass de autenticación por falsificación de cookies de cliente. | Validación criptográfica JWT directa en servidor mediante `supabase.auth.getUser()` bajo el principio **Fail-Closed**. |
-| **Proxy de Imágenes** | Server-Side Request Forgery (SSRF) hacia servicios internos o metadatos de nube. | Cortafuegos con validación estricta de protocolo (`http/https`), bloqueo de direcciones IP privadas (RFC 1918), rechazo de IPs de metadatos (AWS/GCP) y límite de 15 MB. |
-| **Tokens de Integración** | Fuga de credenciales en URL o almacenamiento local no cifrado. | Persistencia en base de datos con políticas de seguridad a nivel de fila (RLS), desvinculadas de la memoria volátil de funciones serverless. |
+| **Route Middleware** | Authentication bypass via forged or stale client cookies. | Server-side cryptographic JWT verification via `supabase.auth.getUser()` under a strict **Fail-Closed** policy. |
+| **Media Proxy** | Server-Side Request Forgery (SSRF) targeting internal networks or cloud metadata. | Custom reverse proxy validating protocol schemes (`http/https`), blocking RFC 1918 private IP ranges, rejecting cloud metadata IPs (`169.254.169.254`), and enforcing a 15 MB payload cap. |
+| **Integration Secrets** | Credential leakage in URLs or unprotected browser storage. | OAuth tokens stored in isolated PostgreSQL tables with Row Level Security (RLS), decoupled from serverless function memory. |
 
 ---
 
-## 🛠️ Stack Tecnológico
+## 🛠️ Technology Stack
 
-Agradecemos y nos apoyamos en el trabajo de las siguientes tecnologías de código abierto y plataformas:
+We gratefully acknowledge the open-source projects and platforms powering AutoApp:
 
-- **Frontend & Backend:** [Next.js 16.3.2](https://nextjs.org/) (App Router), [React 19.2.8](https://react.dev/), [TypeScript 5](https://www.typescriptlang.org/).
-- **Estilos & UI:** [Tailwind CSS v4](https://tailwindcss.com/), [Lucide React](https://lucide.dev/), [Recharts](https://recharts.org/).
-- **Interacciones Drag & Drop:** [@dnd-kit/core](https://dndkit.com/) y `@dnd-kit/sortable`.
-- **Base de Datos & Realtime:** [Supabase](https://supabase.com/) ([PostgreSQL 15+](https://www.postgresql.org/), `@supabase/ssr`, `@supabase/supabase-js`).
-- **Inteligencia Artificial:** [Google Gemini 2.5 Flash](https://ai.google.dev/) mediante `@google/genai` y validación tipada con [Zod](https://zod.dev/).
-- **DevOps & Contenedores:** [Docker](https://www.docker.com/) (Alpine 3.x, compilación multi-stage de ~140 MB).
+- **Frontend & Fullstack Core:** [Next.js 16.3.2](https://nextjs.org/) (App Router), [React 19.2.8](https://react.dev/), [TypeScript 5](https://www.typescriptlang.org/).
+- **Styling & Design System:** [Tailwind CSS v4](https://tailwindcss.com/), [Lucide React](https://lucide.dev/), [Recharts](https://recharts.org/).
+- **Interactive UI:** [@dnd-kit/core](https://dndkit.com/) and `@dnd-kit/sortable`.
+- **Database & Realtime:** [Supabase](https://supabase.com/) ([PostgreSQL 15+](https://www.postgresql.org/), `@supabase/ssr`, `@supabase/supabase-js`).
+- **Applied Artificial Intelligence:** [Google Gemini 2.5 Flash](https://ai.google.dev/) via `@google/genai` with schema validation by [Zod](https://zod.dev/).
+- **DevOps & Containers:** [Docker](https://www.docker.com/) (Alpine 3.x, ~140 MB multi-stage build).
 
 ---
 
-## 💻 Puesta en Marcha Local
+## 💻 Local Development
 
-### Prerrequisitos
-- [Node.js](https://nodejs.org/) v20.x o superior
-- [npm](https://www.npmjs.com/) v10.x o superior
-- Una instancia de [Supabase](https://supabase.com/) (Cloud o local)
-- Una API Key de [Google AI Studio](https://aistudio.google.com/)
+### Prerequisites
+- [Node.js](https://nodejs.org/) v20.x or higher
+- [npm](https://www.npmjs.com/) v10.x or higher
+- A [Supabase](https://supabase.com/) project (Cloud or local)
+- A [Google AI Studio](https://aistudio.google.com/) API Key
 
-### 1. Clonar el repositorio
+### 1. Clone the repository
 ```bash
 git clone https://github.com/thomasskarp/autoapp.git
 cd autoapp
 ```
 
-### 2. Instalar dependencias
+### 2. Install dependencies
 ```bash
 npm install
 ```
 
-### 3. Configurar variables de entorno
-Crea un archivo `.env.local` tomando como base el archivo de ejemplo:
+### 3. Configure environment variables
+Create a `.env.local` file based on the production example:
 ```bash
 cp .env.production.example .env.local
 ```
 
-Completa los valores correspondientes:
+Fill in your service credentials:
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=tu-anon-key
-SUPABASE_SERVICE_ROLE_KEY=tu-service-role-key
-GEMINI_API_KEY=tu-gemini-api-key
-MERCADOLIBRE_CLIENT_ID=tu-app-id
-MERCADOLIBRE_CLIENT_SECRET=tu-app-secret
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+GEMINI_API_KEY=your-gemini-api-key
+MERCADOLIBRE_CLIENT_ID=your-app-id
+MERCADOLIBRE_CLIENT_SECRET=your-app-secret
 MERCADOLIBRE_REDIRECT_URI=http://localhost:3000/api/mercadolibre/callback
 ```
 
-### 4. Ejecutar migraciones en Supabase
-Ejecuta secuencialmente en el SQL Editor de tu consola de Supabase:
-1. `supabase_migration.sql` (Esquema base de stock, leads y perfiles)
-2. `supabase_infoauto_migration.sql` (Catálogo InfoAuto con extensión `pg_trgm` e índices GIN)
-3. `supabase_agency_integrations.sql` (Credenciales seguras de MercadoLibre)
-4. `supabase_phase4_whatsapp_crm.sql` (Campos de inteligencia de leads e interacciones)
+### 4. Run database migrations
+Execute sequentially in the Supabase SQL Editor:
+1. `supabase_migration.sql` (Base schema: stock, leads, user profiles)
+2. `supabase_infoauto_migration.sql` (InfoAuto catalog with `pg_trgm` extension and GIN indexes)
+3. `supabase_agency_integrations.sql` (MercadoLibre secure token storage)
+4. `supabase_phase4_whatsapp_crm.sql` (CRM intelligence fields and interaction history)
 
-Opcionalmente, puebla la base con el script de catálogo:
+Seed the vehicle catalog if needed:
 ```bash
 node scripts/seed_infoauto.mjs
 ```
 
-### 5. Iniciar servidor de desarrollo
+### 5. Start the development server
 ```bash
 npm run dev
 ```
-Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 🐳 Despliegue con Docker
+## 🐳 Docker Deployment
 
-El proyecto incluye un `Dockerfile` optimizado en 3 etapas (`deps`, `builder`, `runner`) sobre `node:20-alpine`:
+The project includes an optimized 3-stage `Dockerfile` (`deps`, `builder`, `runner`) on `node:20-alpine`:
 
 ```bash
-# Construir imagen
+# Build Docker image
 docker build -t autoapp:latest .
 
-# Ejecutar contenedor
+# Run container
 docker run -p 3000:3000 --env-file .env.local autoapp:latest
 ```
 
-También puedes orquestarlo con Docker Compose:
+Or run with Docker Compose:
 ```bash
 docker compose up -d
 ```
-Verifica el estado del servicio mediante el endpoint de telemetría:
+Inspect service health using the telemetry endpoint:
 ```bash
 curl http://localhost:3000/api/health
 ```
 
 ---
 
-## 🧪 Verificación y Pruebas
+## 🧪 Test Suites & Verification
 
-El repositorio incluye un conjunto de suites de prueba modulares bajo `scripts/`:
+The repository contains modular verification scripts under `scripts/`:
 
 ```bash
-node scripts/test_security_phase1.mjs       # Verificación de Fail-Closed y Anti-SSRF
-node scripts/test_phase2_performance.mjs    # Benchmarking de latencia InfoAuto (<5ms)
-node scripts/test_phase3_ai.mjs             # Validación de esquemas Zod con Gemini
-node scripts/test_phase4_whatsapp_crm.mjs   # Pruebas de integración CRM y Realtime
-node scripts/test_phase5_devops.mjs         # Chequeo de telemetría y Docker Health
+node scripts/test_security_phase1.mjs       # Fail-Closed and Anti-SSRF tests
+node scripts/test_phase2_performance.mjs    # InfoAuto sub-5ms latency benchmarking
+node scripts/test_phase3_ai.mjs             # Gemini Zod structured output validation
+node scripts/test_phase4_whatsapp_crm.mjs   # CRM and Supabase Realtime checks
+node scripts/test_phase5_devops.mjs         # Docker health and telemetry checks
 ```
 
 ---
 
-## 🤝 Contribuciones y Comunidad
+## 🤝 Contributing
 
-Este proyecto está abierto a retroalimentación, correcciones y mejoras por parte de la comunidad. Si encuentras un problema o tienes una sugerencia constructiva, por favor revisa [CONTRIBUTING.md](./CONTRIBUTING.md) o abre un *Issue* descriptivo.
+Feedback, issue reports, and pull requests are warmly welcomed. Please review [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on code standards and branch naming.
 
 ---
 
-## 📄 Licencia
+## 📄 License
 
-Distribuido bajo la Licencia MIT. Consulta [LICENSE](./LICENSE) para más detalles.
+Distributed under the MIT License. See [LICENSE](./LICENSE) for details.

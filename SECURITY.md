@@ -1,38 +1,38 @@
-﻿# 🛡️ Política de Seguridad — AutoApp
+﻿# 🛡️ Security Policy — AutoApp
 
-La seguridad y confiabilidad de los datos en entornos B2B son una prioridad central en el desarrollo de AutoApp.
+Security and data integrity in B2B environments are fundamental to the design and implementation of AutoApp.
 
-## Versiones Soportadas
+## Supported Versions
 
-| Versión | Soportada |
+| Version | Supported |
 | :--- | :--- |
 | `0.1.x` (Main) | :white_check_mark: |
 
-## Modelo de Seguridad y Defensas Implementadas
+## Security Model & Defensive Posture
 
-### 1. Autenticación Fail-Closed
-- Todas las rutas protegidas del panel SaaS son verificadas criptográficamente a nivel de servidor utilizando `supabase.auth.getUser()`.
-- Ante cualquier error de red, expiración de token o cabecera ausente, el middleware redirige de inmediato a la pantalla de login (`fail-closed`), previniendo accesos indebidos.
+### 1. Fail-Closed Authentication
+- All protected routes within the SaaS dashboard are cryptographically verified on the server side using `supabase.auth.getUser()`.
+- On any network error, token expiration, or missing header, the middleware immediately redirects to the login screen (`fail-closed`), preventing unauthorized access.
 
-### 2. Cortafuegos Anti-SSRF en Proxy de Recursos
-- El endpoint `/api/proxy-image` implementa un filtro riguroso de direcciones IP:
-  - Solo permite esquemas `http:` y `https:`.
-  - Bloquea rangos locales y privados según RFC 1918 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`).
-  - Bloquea explícitamente endpoints de metadatos de proveedores cloud (`169.254.169.254` para AWS/GCP).
-  - Limita las respuestas a un tamaño máximo de 15 MB y restringe tipos MIME únicamente a imágenes legítimas (`image/*`).
+### 2. Anti-SSRF Media Proxy Firewall
+- The `/api/proxy-image` endpoint enforces strict request filtering:
+  - Whitelists only `http:` and `https:` URL schemes.
+  - Rejects private, loopback, and local IP addresses according to RFC 1918 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`).
+  - Explicitly blocks cloud provider metadata endpoints (`169.254.169.254` for AWS/GCP).
+  - Caps maximum download size to 15 MB and restricts MIME types strictly to valid images (`image/*`).
 
-### 3. Manejo de Credenciales OAuth de Terceros
-- Los tokens de MercadoLibre VIS se almacenan en la tabla `agency_integrations` protegida con Row Level Security (RLS) en PostgreSQL.
-- Nunca se exponen `access_token` o `refresh_token` en URLs ni en almacenamiento del navegador (`localStorage`).
-- La renovación de tokens se procesa de forma transaccional en el backend para soportar la ejecución concurrente en funciones serverless.
+### 3. Third-Party OAuth Secret Isolation
+- MercadoLibre VIS tokens are persisted in PostgreSQL (`agency_integrations`) safeguarded by Row Level Security (RLS).
+- Tokens are never exposed in URL query parameters or insecure browser storage (`localStorage`).
+- Token refresh cycles are handled transactionally on the backend to prevent race conditions across concurrent serverless function executions.
 
-## Reporte de Vulnerabilidades
+## Reporting a Vulnerability
 
-Si descubres una posible vulnerabilidad de seguridad en este proyecto, te agradecemos reportarla de manera responsable:
-- Por favor **no** abras un issue público.
-- Envía un correo electrónico a `tomas.skarp@gmail.com` detallando:
-  - Descripción del vector de ataque
-  - Pasos para reproducir el hallazgo
-  - Impacto potencial estimado
+If you discover a potential security issue in this repository, please disclose it responsibly:
+- Please **do not** open a public issue.
+- Send an email to `tomas.skarp@gmail.com` with:
+  - Description of the potential vulnerability
+  - Steps or proof of concept to reproduce the behavior
+  - Estimated impact
 
-Agradecemos profundamente a la comunidad de seguridad y a los desarrolladores que contribuyen a mantener este ecosistema seguro.
+We sincerely appreciate the security community and developers who help keep this project safe.
