@@ -82,7 +82,7 @@ flowchart TD
     EXT -.-> FB
 ```
 
-For complete relational schemas, sequence diagrams, and microservice definitions, refer to [MAPA_COMPLETO_AUTOAPP.md](./MAPA_COMPLETO_AUTOAPP.md).
+For complete relational schemas, sequence diagrams, and microservice definitions, refer to [MAPA_COMPLETO_AUTOAPP.md](./MAPA_COMPLETO_AUTOAPP.md). To inspect our living multi-agent state machine and verification graph, see [AGENT_GRAPH.md](./AGENT_GRAPH.md).
 
 ---
 
