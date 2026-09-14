@@ -1,4 +1,4 @@
-﻿# 🚗 AutoApp — Automotive B2B SaaS Ecosystem & Sales Copilot
+# 🚗 AutoApp — Automotive B2B SaaS Ecosystem & Sales Copilot
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.3.2-black?logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2.8-blue?logo=react)](https://react.dev/)
@@ -28,42 +28,58 @@ Automotive retail operations across Latin America frequently struggle with fragm
 The ecosystem is built across decoupled layers prioritizing resilience, sub-millisecond data access, and strict security boundaries:
 
 ```mermaid
-flowchart TB
-    subgraph CLIENTS ["📱 Client Layer & Extensions"]
-        WEB["💻 Dealership Web App (Next.js 16 / React 19)"]
-        EXT["🧩 Auto-Cyborg 360 Chrome Extension (Manifest V3)"]
+flowchart TD
+    classDef client fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc;
+    classDef security fill:#0f172a,stroke:#34d399,stroke-width:1.5px,color:#f8fafc;
+    classDef core fill:#0f172a,stroke:#a78bfa,stroke-width:1.5px,color:#f8fafc;
+    classDef data fill:#0f172a,stroke:#f472b6,stroke-width:1.5px,color:#f8fafc;
+    classDef channel fill:#0f172a,stroke:#fbbf24,stroke-width:1.5px,color:#f8fafc;
+
+    subgraph L1 ["📱 1. Client Applications"]
+        direction LR
+        WEB["💻 Dealership Web App (Next.js 16 / React 19)"]:::client
+        EXT["🧩 Auto-Cyborg 360 (Chrome Extension MV3)"]:::client
     end
 
-    subgraph SECURITY ["🛡️ Edge Security & Middleware"]
-        AUTH_GUARD["Cryptographic Fail-Closed JWT (src/proxy.ts)"]
-        SSRF_GUARD["Anti-SSRF Image Proxy (/api/proxy-image)"]
+    subgraph L2 ["🛡️ 2. Edge Security & Guardrails"]
+        direction LR
+        AUTH["🔒 Fail-Closed JWT Guard (src/proxy.ts)"]:::security
+        SSRF["🛡️ Anti-SSRF Media Proxy (RFC 1918 Filter)"]:::security
     end
 
-    subgraph CORE ["⚙️ SaaS Core"]
-        STOCK["🚗 Inventory & Batched Catalog"]
-        CRM["📊 Realtime Kanban CRM (@dnd-kit)"]
-        VALUATION["📐 InfoAuto Valuation Engine (< 5ms)"]
-        AI_ENGINE["🧠 Commercial Copilot (Gemini 2.5 Flash + Zod)"]
+    subgraph L3 ["⚙️ 3. SaaS Core & AI Intelligence"]
+        direction LR
+        STOCK["🚗 Inventory & Catalog (Batched 60 FPS)"]:::core
+        CRM["📊 Realtime Kanban CRM (@dnd-kit)"]:::core
+        VAL["📐 InfoAuto Valuation (Fuzzy Match < 5ms)"]:::core
+        AI["🧠 Gemini 2.5 Flash (Zod Structured Outputs)"]:::core
     end
 
-    subgraph DATA ["🗄️ Persistence & Storage"]
-        PG["PostgreSQL (Supabase) + pg_trgm GIN Index"]
-        REALTIME["WebSocket Engine (PostgreSQL Logical Replication)"]
-        STORAGE["Supabase Storage (Vehicle Photos / S3 CDN)"]
+    subgraph L4 ["🗄️ 4. Persistence & Realtime"]
+        direction LR
+        PG["🐘 PostgreSQL (Supabase pg_trgm + GIN)"]:::data
+        RT["⚡ WebSocket Engine (Logical Replication)"]:::data
+        S3["📦 Supabase Storage (Vehicle Photos S3)"]:::data
     end
 
-    subgraph CHANNELS ["🌐 External Ecosystem"]
-        MELI["🟡 MercadoLibre VIS API (MLA1744)"]
-        FB["🔵 Facebook Marketplace"]
-        WA["🟢 WhatsApp Business / Bot Companion"]
+    subgraph L5 ["🌐 5. Integrations & Marketplaces"]
+        direction LR
+        MELI["🟡 MercadoLibre VIS API (OAuth Rotation)"]:::channel
+        FB["🔵 Facebook Marketplace & Instagram"]:::channel
+        WA["🟢 WhatsApp Companion (Fastify & Bot Worker)"]:::channel
     end
 
-    CLIENTS --> SECURITY
-    SECURITY --> CORE
-    CORE <--> DATA
-    DATA --> REALTIME --> CRM
-    CORE --> CHANNELS
-    EXT <--> CHANNELS
+    WEB --> L2
+    L2 --> L3
+    STOCK --> PG
+    VAL --> PG
+    PG --> RT
+    RT --> CRM
+    SSRF --> S3
+    STOCK --> MELI
+    STOCK --> FB
+    CRM --> WA
+    EXT -.-> FB
 ```
 
 For complete relational schemas, sequence diagrams, and microservice definitions, refer to [MAPA_COMPLETO_AUTOAPP.md](./MAPA_COMPLETO_AUTOAPP.md).

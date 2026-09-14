@@ -1,29 +1,30 @@
-# 🧩 Extensión Chrome: Auto-Cyborg 360 (v1.0.0)
+﻿# 🧩 Auto-Cyborg 360 Chrome Extension (v1.0.0)
 
-Extensión de apoyo para asesores comerciales y community managers de concesionarias. Permite el autocompletado de publicaciones en Facebook Marketplace, Instagram y WhatsApp Web a partir del stock cargado en AutoApp.
+Companion browser automation extension for automotive sales advisors and social media managers. Enables single-click DOM autocompletion across Facebook Marketplace, Instagram, and WhatsApp Web directly from AutoApp inventory.
 
 ---
 
-### 📦 Guía de Instalación Rápida (1 Minuto)
+### 📦 Quick Installation Guide (1 Minute)
 
-1. Abre Google Chrome, Brave o Microsoft Edge.
-2. Ingresa en la barra de direcciones:
+1. Open Google Chrome, Brave, or Microsoft Edge.
+2. Navigate to:
    ```text
    chrome://extensions
    ```
-3. En la esquina superior derecha, activa la casilla **"Modo de desarrollador"** (*Developer mode*).
-4. Haz clic en el botón **"Cargar descomprimida"** (*Load unpacked*).
-5. Selecciona la carpeta:
+3. In the top right corner, enable **"Developer mode"**.
+4. Click **"Load unpacked"**.
+5. Select the extension directory:
    ```text
    autoapp/extension/auto-cyborg-360
    ```
-6. ¡Listo! La extensión quedará activa con el icono de Auto-Cyborg 360 en la barra de herramientas del navegador.
+6. Done! The Auto-Cyborg 360 icon will appear in your browser extensions toolbar.
 
 ---
 
-### 🚀 Cómo Usarla desde AutoApp
+### 🚀 Usage from AutoApp
 
-1. En el panel de AutoApp, dirígete al módulo **Stock**.
-2. En cualquier vehículo, haz clic en el botón **"Publicar"** (icono de megáfono).
-3. Selecciona **Facebook Marketplace** o **WhatsApp Estado**.
-4. AutoApp abrirá automáticamente la pestaña correspondiente inyectando los datos del auto para autocompletar la publicación sin tipeo manual.
+1. Inside the AutoApp dashboard, navigate to the **Stock** module.
+2. On any vehicle card, click the **"Publish"** action button (megaphone icon).
+3. Select **Facebook Marketplace**, **Instagram Feed**, or **WhatsApp Status**.
+4. AutoApp automatically launches the target portal injecting vehicle metadata via hash bridge (`#autoapp=...`, `#autoapp_ig=...`, `#autoapp_wa=...`).
+5. Auto-Cyborg 360 detects the payload, copies the formatted copy and photos to your clipboard, and displays an assisted completion overlay.

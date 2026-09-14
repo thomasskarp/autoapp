@@ -22,6 +22,15 @@ function getPayloadFromHash() {
     }
   }
 
+  if (hash.startsWith('#autoapp_ig=')) {
+    try {
+      const jsonStr = decodeURIComponent(hash.replace('#autoapp_ig=', ''))
+      return JSON.parse(jsonStr)
+    } catch (e) {
+      console.error('[Auto-Cyborg 360] Error parseando hash Instagram:', e)
+    }
+  }
+
   return null
 }
 
@@ -73,6 +82,17 @@ async function init() {
 
     if (window.location.hostname.includes('whatsapp.com')) {
       showAutoAppBanner('Ficha lista. Usa Ctrl+V para pegar foto o texto en tu chat o estado.', 'success')
+    }
+
+    if (window.location.hostname.includes('instagram.com')) {
+      console.log('📸 [Auto-Cyborg 360] Preparando publicación en Instagram...')
+      const captionText = payload.descripcion || payload.caption || ''
+      if (captionText) {
+        try {
+          await navigator.clipboard.writeText(captionText)
+          showAutoAppBanner('Copy con hashtags copiado al portapapeles para Instagram.', 'success')
+        } catch (err) {}
+      }
     }
   }
 }

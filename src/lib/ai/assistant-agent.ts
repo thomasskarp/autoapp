@@ -108,9 +108,10 @@ Ficha técnica y fotos listas en tu panel de publicaciones para compartir en 1 c
 
       if (supabase) {
         try {
-          await supabase.from('vehicles').insert(vehicleRecord)
+          const targetTable = (vehicleRecord.Km === 0 || vehicleRecord.Tipo_Vehiculo === '0km') ? 'DB_STOCK_OKM' : 'DB_STOCK'
+          await supabase.from(targetTable).insert(vehicleRecord)
         } catch (dbErr) {
-          console.error('[Assistant Agent] Error al insertar en tabla vehicles:', dbErr)
+          console.error('[Assistant Agent] Error al insertar en stock:', dbErr)
         }
       }
 

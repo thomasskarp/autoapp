@@ -1,97 +1,90 @@
-# 🚀 Guía Maestra de Despliegue en Producción — AutoApp SaaS
+﻿# 🚀 Production Deployment Master Guide — AutoApp SaaS
 
-Esta guía detalla los dos métodos recomendados para poner **AutoApp** en línea en producción de forma segura, escalable y con costo $0 o mínimo.
-
----
-
-## 🌟 Opción 1: Despliegue en Vercel (Recomendado — 100% Gratuito)
-
-Vercel es la plataforma nativa de los creadores de Next.js. Provee compilación instantánea, CDN global y certificados SSL automáticos.
-
-### Paso 1: Subir el código a GitHub
-1. Si aún no lo has hecho, inicializa tu repositorio Git:
-   ```bash
-   git init
-   git add .
-   git commit -m "feat: autoapp produccion v1.0.0"
-   ```
-2. Crea un repositorio privado en GitHub (ej: `autoapp-saas`) y sube tu código:
-   ```bash
-   git remote add origin https://github.com/TU-USUARIO/autoapp-saas.git
-   git branch -M main
-   git push -u origin main
-   ```
-
-### Paso 2: Importar el Proyecto en Vercel
-1. Entra a [vercel.com](https://vercel.com) e inicia sesión con GitHub.
-2. Haz clic en **"Add New..."** > **"Project"**.
-3. Selecciona tu repositorio `autoapp-saas` (si el proyecto está en una subcarpeta, selecciona `autoapp` como *Root Directory*).
-4. El framework preset se detectará automáticamente como **Next.js**.
-
-### Paso 3: Configurar Variables de Entorno en Vercel
-En la sección **"Environment Variables"**, copia y pega las variables de tu archivo `.env.local` / `.env.production.example`:
-
-| Variable | Valor / Origen |
-| :--- | :--- |
-| `NEXT_PUBLIC_SUPABASE_URL` | URL de tu proyecto Supabase (`https://xxxx.supabase.co`) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Llave anónima pública de Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | Llave secreta de servicio de Supabase |
-| `NEXT_PUBLIC_APP_NAME` | `AutoApp` |
-| `NEXT_PUBLIC_APP_URL` | `https://tu-proyecto.vercel.app` (o tu dominio propio) |
-| `GEMINI_API_KEY` | Tu API key de Google AI Studio |
-| `MERCADOLIBRE_CLIENT_ID` | Client ID de tu App en MercadoLibre Developers |
-| `MERCADOLIBRE_CLIENT_SECRET` | Client Secret de tu App en MercadoLibre Developers |
-| `MERCADOLIBRE_REDIRECT_URI` | `https://tu-proyecto.vercel.app/api/mercadolibre/callback` |
-
-### Paso 4: Desplegar y Verificar
-1. Haz clic en **"Deploy"**. En ~2 minutos Vercel compilará tu aplicación y te entregará una URL productiva con candado verde SSL.
-2. Verifica la salud del sistema accediendo a:
-   ```text
-   https://tu-proyecto.vercel.app/api/health
-   ```
-   Debe responder con `{ "status": "healthy", ... }`.
-
-### Paso 5: Registrar la URL en MercadoLibre
-1. Ingresa a [MercadoLibre Developers](https://developers.mercadolibre.com.ar/).
-2. En la configuración de tu aplicación, actualiza el campo **Redirect URI** con tu dominio real:
-   `https://tu-proyecto.vercel.app/api/mercadolibre/callback`
+This guide outlines the recommended deployment strategies to run **AutoApp** in production with high availability, enterprise security, and zero-to-minimal infrastructure costs.
 
 ---
 
-## 🐳 Opción 2: Despliegue en VPS con Docker (DigitalOcean / Hetzner / AWS)
+## 🌟 Option 1: Vercel Serverless (Recommended — 100% Free Tier Available)
 
-Si prefieres tener tu propio servidor virtual (Ubuntu Linux) o usar herramientas como Coolify / Portainer:
+Vercel provides edge network acceleration, automatic SSL certificate provisioning, and native Next.js 16 App Router optimization.
 
-### Paso 1: Clonar y Configurar Entorno
+### Step 1: Push Code to GitHub
+Ensure your repository is synchronized on GitHub:
 ```bash
-git clone https://github.com/TU-USUARIO/autoapp-saas.git
-cd autoapp-saas/autoapp
-cp .env.production.example .env.local
-nano .env.local  # Completa con tus credenciales reales
+git remote add origin https://github.com/thomasskarp/autoapp.git
+git branch -M main
+git push -u origin main
 ```
 
-### Paso 2: Compilar y Levantar el Contenedor
+### Step 2: Import Project in Vercel
+1. Navigate to [vercel.com](https://vercel.com) and sign in with GitHub.
+2. Click **"Add New..."** > **"Project"**.
+3. Select the `thomasskarp/autoapp` repository.
+4. The framework preset will automatically detect **Next.js**.
+
+### Step 3: Configure Environment Variables
+Under the **"Environment Variables"** tab, configure the variables based on `.env.production.example`:
+
+| Variable | Description / Source |
+| :--- | :--- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Project URL (`https://[project-id].supabase.co`) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Public Anonymous API Key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Admin Service Role Secret Key |
+| `NEXT_PUBLIC_APP_NAME` | `AutoApp` |
+| `NEXT_PUBLIC_APP_URL` | `https://your-domain.vercel.app` (or custom domain) |
+| `GEMINI_API_KEY` | Google AI Studio API Key |
+| `MERCADOLIBRE_CLIENT_ID` | MercadoLibre Developers Application ID |
+| `MERCADOLIBRE_CLIENT_SECRET` | MercadoLibre Developers Client Secret |
+| `MERCADOLIBRE_REDIRECT_URI` | `https://your-domain.vercel.app/api/mercadolibre/callback` |
+
+### Step 4: Deploy & Verify Telemetry
+1. Click **"Deploy"**. The build process finishes in ~2 minutes with an SSL-secured URL.
+2. Confirm system status by pinging the live health endpoint:
+   ```text
+   https://your-domain.vercel.app/api/health
+   ```
+   Expected response: `{ "status": "healthy", ... }`.
+
+### Step 5: Register Production URL with MercadoLibre
+1. Open [MercadoLibre Developers](https://developers.mercadolibre.com.ar/).
+2. In your application settings, set **Redirect URI** to:
+   `https://your-domain.vercel.app/api/mercadolibre/callback`
+
+---
+
+## 🐳 Option 2: Self-Hosted VPS with Docker (DigitalOcean / Hetzner / AWS)
+
+For self-hosted Linux servers or orchestrators (Portainer, Coolify):
+
+### Step 1: Clone and Configure Environment
+```bash
+git clone https://github.com/thomasskarp/autoapp.git
+cd autoapp
+cp .env.production.example .env.local
+nano .env.local  # Populate with production credentials
+```
+
+### Step 2: Build & Start Container
 ```bash
 docker compose up -d --build
 ```
+The application runs on port `3000` with automatic container restart (`restart: unless-stopped`).
 
-El servicio levantará en el puerto `3000` con arranque automático en caso de reinicio del servidor (`restart: unless-stopped`).
-
-### Paso 3: Verificar Estado
+### Step 3: Inspect Health & Logs
 ```bash
-# Ver logs en vivo
+# Stream container logs
 docker logs -f autoapp_web
 
-# Test de salud
+# Verify service health
 curl http://localhost:3000/api/health
 ```
 
 ---
 
-## 🛡️ Lista de Chequeo Final de Seguridad en Producción
-- [x] RLS activado en Supabase para `DB_STOCK`, `DB_LEADS`, `DB_INTERACCIONES` y `agency_integrations`.
-- [x] Cortafuegos Anti-SSRF activo en `/api/proxy-image`.
-- [x] Verificación criptográfica JWT activa en el proxy (`src/proxy.ts`).
-- [x] Tokens OAuth de MercadoLibre protegidos en base de datos sin exposición en URLs.
-- [x] Motor InfoAuto optimizado con caché HTTP de 1 hora (`s-maxage=3600`).
-- [x] Endpoint de salud y diagnóstico activo en `/api/health`.
+## 🛡️ Production Security Checklist
+- [x] Row Level Security (RLS) active on `DB_STOCK`, `DB_LEADS`, `DB_INTERACCIONES`, and `agency_integrations`.
+- [x] Anti-SSRF media proxy firewall active on `/api/proxy-image`.
+- [x] Fail-Closed cryptographic JWT session verification active in `src/proxy.ts`.
+- [x] MercadoLibre OAuth tokens persisted transactionally in database without URL exposure.
+- [x] InfoAuto catalog optimized with sub-5ms GIN trigram queries and RFC 7234 edge cache.
+- [x] Continuous health and uptime telemetry active at `/api/health`.
