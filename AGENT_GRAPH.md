@@ -1,6 +1,8 @@
-﻿# 🧠 AutoApp Agent Graph — Living Architecture & State Machine
+# 🧠 AutoApp Agent Graph — Living Architecture & State Machine
 
 > **Multi-Agent Orchestration Blueprint:** This document defines the state graph, specialized worker nodes, independent verification gates (*checker nodes*), and Human-in-the-Loop (HITL) breakpoints for the AutoApp Copilot and Assistant, implementing state-of-the-art **Agent Graph** design patterns.
+
+![AutoApp Multi-Agent Graph Architecture](./public/agent_graph_map.jpg)
 
 ---
 
