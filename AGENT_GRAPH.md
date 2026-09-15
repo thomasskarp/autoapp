@@ -1,21 +1,21 @@
 ﻿# 🧠 AutoApp Agent Graph — Living Architecture & State Machine
 
-> **Blueprint de Orquestación Multi-Agente:** Este documento define el grafo de estados, nodos especializados, verificadores independientes (*checker nodes*) y puntos de interrupción con intervención humana (*Human-in-the-Loop*) para el Asistente y Copiloto de AutoApp, siguiendo las mejores prácticas de **Agent Graphs** (2026).
+> **Multi-Agent Orchestration Blueprint:** This document defines the state graph, specialized worker nodes, independent verification gates (*checker nodes*), and Human-in-the-Loop (HITL) breakpoints for the AutoApp Copilot and Assistant, implementing state-of-the-art **Agent Graph** design patterns.
 
 ---
 
-## 1. 🎯 Principios del Diseño del Grafo
+## 1. 🎯 Core Architectural Principles
 
-Siguiendo la evolución de la arquitectura de agentes inteligentes:
-1. **Descomposición del Monolito:** En lugar de saturar un único prompt gigante con todas las tareas (tasar, vender, redactar, validar y guardar), el sistema se divide en **nodos de responsabilidad única**.
-2. **"No dejes que el agente califique su propio examen":** Los nodos generativos nunca se autoevalúan. Un nodo verificador independiente (*Guardrail / Validator Node*) valida esquemas `Zod`, márgenes de ganancia (15-25%) y coherencia de precios.
-3. **Estado Compartido Tipado (*State Blackboard*):** Todo el flujo comparte un objeto inmutable de estado (`AutoAppState`) que acumula información y trazabilidad.
-4. **Puntos de Interrupción Humana (*Human-in-the-Loop / Breakpoints*):** Las acciones irreversibles o de alto impacto comercial (publicar en MercadoLibre o alterar precios) detienen el grafo y aguardan confirmación explícita del usuario.
-5. **Ejecución Paralela (*Fan-Out / Fan-In*):** Tareas independientes (como generar copys para 4 redes sociales simultáneas) se procesan concurrentemente.
+Reflecting the modern evolution of autonomous AI agent design:
+1. **Deconstruction of the Monolith:** Rather than overloading a single massive prompt with contradictory tasks (extraction, valuation, multichannel copywriting, margin enforcement, database insertion, and third-party API calls), the workflow is decomposed into **isolated, single-responsibility nodes**.
+2. **"An Agent Should Never Grade Its Own Homework":** Generative nodes never evaluate their own work. An independent verification node (*Quality & Margin Checker Gate*) deterministically validates data schemas, profit margin boundaries (15–25%), and sanity bounds before mutations occur.
+3. **Typed Shared State (*State Blackboard*):** Every node reads and updates an immutable, serializable state object (`AutoAppState`) that preserves context, audit telemetry, and time-travel traceability.
+4. **Human-in-the-Loop Breakpoints (HITL):** High-impact or irreversible commercial operations (such as publishing paid classified listings or adjusting inventory prices) halt execution, presenting a preview and awaiting explicit human confirmation.
+5. **Concurrent Execution (*Fan-Out / Fan-In*):** Independent sub-tasks (e.g., generating tailored copy for Instagram, Facebook Marketplace, MercadoLibre, and WhatsApp simultaneously) execute in parallel.
 
 ---
 
-## 2. 🗺️ Diagrama del Grafo de Estados (Agent Graph)
+## 2. 🗺️ State Machine & Agent Graph Diagram
 
 ```mermaid
 flowchart TD
@@ -26,95 +26,101 @@ flowchart TD
     classDef hitl fill:#0f172a,stroke:#ec4899,stroke-width:1.5px,color:#f8fafc;
     classDef sink fill:#0f172a,stroke:#10b981,stroke-width:1.5px,color:#f8fafc;
 
-    START(["🚀 User Input / WhatsApp Message"]):::start --> ROUTER{"🧭 Intent Router & Supervisor"}:::router
+    START(["🚀 User Input / Chat Message"]):::start --> ROUTER{"🧭 Intent Router & Supervisor"}:::router
 
-    %% Subgrafo de Ingesta y Creación de Stock
+    %% Stock Ingestion Subgraph
     ROUTER -->|"Intent: Add Vehicle"| PARSER["📦 Vehicle Spec Extractor<br/><i>Gemini 2.5 + Zod Schema</i>"]:::worker
     PARSER --> VALUATOR["📐 Market Valuation Matcher<br/><i>InfoAuto pg_trgm (<5ms)</i>"]:::worker
     VALUATOR --> COPY_GEN["✍️ Multichannel Copy Fan-out<br/><i>IG, FB, MeLi, WhatsApp</i>"]:::worker
     
-    %% Validador Independiente (Checker)
+    %% Independent Checker Gate
     COPY_GEN --> STOCK_CHECKER{"🛡️ Quality & Margin Checker<br/><i>Price > 0, Margins 15-25%</i>"}:::checker
-    STOCK_CHECKER -->|"Pass"| HITL_STOCK["🛑 HITL Confirmation Gate<br/><i>'Confirmar publicación?'</i>"]:::hitl
+    STOCK_CHECKER -->|"Pass"| HITL_STOCK["🛑 HITL Confirmation Gate<br/><i>'Confirm Publication?'</i>"]:::hitl
     STOCK_CHECKER -->|"Correction Needed"| PARSER
 
-    %% Subgrafo de Tasación de Permutas
+    %% Trade-In Valuation Subgraph
     ROUTER -->|"Intent: Trade-In Valuation"| APPRAISAL["⚖️ Semantic Appraisal Engine<br/><i>Catalog Match + Margins</i>"]:::worker
     APPRAISAL --> APPRAISAL_CHECKER{"🛡️ Appraisal Validator<br/><i>Check Official Price Book</i>"}:::checker
     APPRAISAL_CHECKER -->|"Valid"| APPRAISAL_REPLY["💬 Formatted Valuation Offer"]:::sink
     APPRAISAL_CHECKER -->|"Uncertain Match"| FUZZY_FALLBACK["🔍 In-Memory Map Fallback"]:::worker
     FUZZY_FALLBACK --> APPRAISAL_REPLY
 
-    %% Subgrafo de Inteligencia de Prospectos (CRM)
+    %% CRM Lead Intelligence Subgraph
     ROUTER -->|"Intent: Lead Inbound"| LEAD_INTEL["🎯 Lead Intelligence Node<br/><i>Temperature Scoring 🔥/🟡/❄️</i>"]:::worker
     LEAD_INTEL --> NBA["⚡ Next Best Action Generator<br/><i>Single-Click Quick Reply</i>"]:::worker
     NBA --> CRM_CHECKER{"🛡️ Lead Quality Guard<br/><i>Spam / Valid Phone / Sentiment</i>"}:::checker
     CRM_CHECKER -->|"Valid Lead"| LEAD_DISPATCH["⚡ Supabase Realtime Kanban Sync"]:::sink
 
-    %% Confirmación Humana y Ejecución
-    HITL_STOCK -->|"User: 'Sí, publicar'"| EXEC_DISPATCH["🚀 Transactional Dispatcher<br/><i>PostgreSQL + MeLi API + Hash</i>"]:::sink
-    HITL_STOCK -->|"User: 'No / Modificar'"| EDIT_NODE["✏️ Parameter Adjuster Node"]:::worker
+    %% Human Confirmation & Transactional Execution
+    HITL_STOCK -->|"User: 'Confirm / Publish'"| EXEC_DISPATCH["🚀 Transactional Dispatcher<br/><i>PostgreSQL + MeLi API + Hash</i>"]:::sink
+    HITL_STOCK -->|"User: 'Modify / Reject'"| EDIT_NODE["✏️ Parameter Adjuster Node"]:::worker
     EDIT_NODE --> HITL_STOCK
     EXEC_DISPATCH --> TERMINAL(["🏁 Published & Synced"]):::sink
 ```
 
 ---
 
-## 3. 📦 Estructura del Estado del Grafo (`AutoAppState`)
+## 3. 📦 Graph State Structure (`AutoAppState`)
 
-Cada invocación del grafo actualiza un estado tipado y serializable:
+Every graph traversal reads and mutates a strictly typed state contract:
 
 ```typescript
 export interface AutoAppState {
-  // 1. Contexto de Sesión y Usuario
+  // 1. Session & Tracking
   sessionId: string
   userId: string
   agencyId: string
   channel: 'WEB_CHAT' | 'WHATSAPP' | 'TELEGRAM'
-  
-  // 2. Historial de Conversación
-  messages: Array<{
-    role: 'user' | 'assistant' | 'system'
-    content: string
-    timestamp: string
-  }>
 
-  // 3. Intención Clasificada
-  intent?: 'ADD_STOCK' | 'APPRAISAL' | 'LEAD_INTELLIGENCE' | 'CONFIRM_ACTION' | 'GENERAL_FAQ'
+  // 2. Raw Input & Context
+  inputMessage: string
+  photoUrls: string[]
+
+  // 3. Routing & Navigation
+  intent?: 'ADD_STOCK' | 'APPRAISAL' | 'LEAD_CRM' | 'CONFIRM_PUBLISH' | 'GENERAL_FAQ'
   confidence?: number
+  currentNode: string
+  executionPath: string[] // e.g., ['router (8ms)', 'extractor (210ms)', 'valuation (3ms)']
 
-  // 4. Entidades Vehiculares Extraídas
+  // 4. Extracted Domain Entities
   draftVehicle?: {
-    marca?: string
-    modelo?: string
+    marca: string
+    modelo: string
     version?: string
-    anio?: number
-    km?: number
-    precioVenta?: number
-    precioEntrega?: number
+    anio: number
+    km: number
+    precio_venta: number
+    precio_entrega?: number
     patente?: string
-    combustible?: string
-    transmision?: string
-    fotos: string[]
+    tipo_combustible: string
+    transmision: string
+    descripcion?: string
+    ID?: string
+    FOTO_PORTADA?: string
+    FOTOS_EXTRA?: string
   }
 
-  // 5. Cotizaciones Oficiales y Márgenes
-  valuation?: {
-    precioOficialInfoAuto: number
-    precioCompraSugerido: number
-    margenEstimadoPorcentaje: number
-    liquidezMercado: 'ALTA' | 'MEDIA' | 'BAJA'
+  // 5. Official Market Valuations & Margins
+  officialValuation?: {
+    tablePrice: number
+    suggestedPurchasePrice: number
+    suggestedSalePrice: number
+    marginPercent: number
+    liquidity: 'ALTA' | 'MEDIA' | 'BAJA'
+    matchedModel: string
+    matchedVersion: string
+    source: 'POSTGRES_PG_TRGM' | 'IN_MEMORY_MAP' | 'AI_HEURISTIC'
   }
 
-  // 6. Copys Generados (Fan-Out)
+  // 6. Concurrent Copywriting Artifacts (Fan-Out)
   generatedCopies?: {
     instagram?: { hook: string; caption: string; hashtags: string[] }
-    facebook?: { title: string; description: string; pricePrompt: string }
-    mercadolibre?: { title: string; description: string; listingType: string }
-    whatsapp?: { formattedSummary: string }
+    facebook?: { title: string; description: string; key_features: string[] }
+    mercadolibre?: { title: string; description: string }
+    whatsapp?: { status_text: string; chat_pitch: string }
   }
 
-  // 7. Prospecto (Lead) Analizado
+  // 7. Lead Evaluation (CRM Pipeline)
   leadEvaluation?: {
     temperatura: 'CALIENTE' | 'TIBIO' | 'FRIO'
     motivo: string
@@ -122,64 +128,74 @@ export interface AutoAppState {
     sugerenciaRespuesta: string
   }
 
-  // 8. Control de Calidad y Human-in-the-Loop
-  validationStatus: {
+  // 8. Quality Assurance & Breakpoints
+  validation: {
     passed: boolean
     errors: string[]
     warnings: string[]
     checkerName: string
+    timestamp: number
   }
-  pendingHumanConfirmation: boolean
+  requiresConfirmation: boolean
+  confirmationPrompt?: string
   confirmationPayload?: any
+
+  // 9. Final Output Payload
+  outputReply: string
+  action?: 'VEHICLE_CREATED' | 'VEHICLE_PUBLISHED' | 'APPRAISAL_OFFER' | 'INFO'
 }
 ```
 
 ---
 
-## 4. 🧩 Inventario Detallado de Nodos
+## 4. 🧩 Node Inventory & Responsibilities
 
-### Nodo 1: `Intent Router & Supervisor`
-* **Entrada:** Mensaje del usuario + últimos 3 mensajes.
-* **Función:** Clasifica la intención con baja latencia mediante prompt determinista o heurísticas regex de alta precisión (`/agrega|ingresa|tasame|lead/`).
-* **Salida:** Enrutamiento condicional hacia el subgrafo correspondiente.
+### Node 1: `Intent Router & Supervisor`
+* **Input:** Raw user prompt + active session context.
+* **Function:** Evaluates user intent with low latency using deterministic pattern matching and semantic classification (`ADD_STOCK`, `APPRAISAL`, `LEAD_CRM`, `CONFIRM_PUBLISH`, `GENERAL_FAQ`).
+* **Output:** Conditional branch dispatching to the target subgraph.
 
-### Nodo 2: `Vehicle Spec Extractor`
-* **Entrada:** Texto informal (ej: *"Tomamos un Cruze 2021 ltz con 45000 km en 23 palos"*).
-* **Función:** Invoca `gemini-2.5-flash` con esquema estricto de `Zod` (`ParsedVehicleSchema`) para estructurar datos numéricos, normalizar cajas y combustibles.
+### Node 2: `Vehicle Spec Extractor`
+* **Input:** Informal, unstructured natural language messages (e.g., *"Just traded in a 2021 Cruze LTZ with 45k km for 24 million ARS"*).
+* **Function:** Calls `gemini-2.5-flash` with a strict `Zod` validation schema (`ParsedVehicleSchema`) to enforce numeric normalization, standard transmission types, and verified Argentine license plate formatting.
 
-### Nodo 3: `Market Valuation Matcher`
-* **Entrada:** `marca`, `modelo`, `version`, `anio`.
-* **Función:** Consulta a PostgreSQL con `pg_trgm` e índice `GIN` (`< 5ms`). Cruza con el catálogo oficial de 8,184 versiones y calcula precio de compra con margen del 15-25%.
+### Node 3: `Market Valuation Matcher`
+* **Input:** Vehicle make, model, version, and year.
+* **Function:** Queries the PostgreSQL database with the `pg_trgm` extension and `GIN` inverted index in `< 5ms` across 8,184 catalog versions. Computes suggested dealership purchase price protecting retail margins (15–25%).
 
-### Nodo 4: `Multichannel Copy Fan-out`
-* **Entrada:** Ficha consolidada del auto + fotos.
-* **Función:** Genera concurrentemente variantes optimizadas para 4 plataformas (emocional con hashtags para Instagram, orientado a anticipo para Marketplace, técnico para MercadoLibre y conciso para WhatsApp).
+### Node 4: `Multichannel Copy Fan-out`
+* **Input:** Structured vehicle record + photo attachments.
+* **Function:** Concurrently produces channel-optimized copy (`Promise.all`):
+  - *Instagram:* Aspirational storytelling, feature highlights, and viral hashtags.
+  - *Facebook Marketplace:* Down payment terms, trade-in willingness, and clear localized call-to-action.
+  - *MercadoLibre:* Formal technical specs compliant with VIS category rules (MLA1744).
+  - *WhatsApp:* Compact, punchy bullet points tailored for instant mobile messaging.
 
-### Nodo 5: `Quality & Margin Checker` (Verificador Independiente)
-* **Principio:** *An agent should never grade its own homework.*
-* **Función:** Nodo determinista que valida:
-  - ¿El precio de venta es mayor a cero y coherente con el año?
-  - ¿El margen de ganancia está entre 15% y 30%?
-  - ¿Las URLs de fotos respetan la política anti-SSRF?
-  - Si falla, redirige al nodo de extracción con feedback correctivo.
+### Node 5: `Quality & Margin Checker` (Independent Verification Gate)
+* **Principle:** *An agent should never grade its own homework.*
+* **Function:** Deterministic evaluation node that enforces business rules:
+  - Validates that mandatory fields (Make, Model, Year, Price) exist and fall within acceptable parameters (1990 <= Year <= Current + 1, Price > 0).
+  - Flags severe underpricing or margin erosion against official InfoAuto reference prices.
+  - Verifies photo URLs against SSRF policies.
+  - Halts execution and requests user correction if validation fails.
 
-### Nodo 6: `HITL Confirmation Gate` (Interrupción Humana)
-* **Función:** Detiene el flujo y genera la tarjeta interactiva:
-  > *"🚘 Chevrolet Cruze 2021 LTZ listo para publicar en MercadoLibre por $23.000.000. ¿Deseas confirmar la publicación?"*
-* **Comportamiento:** Espera el clic del usuario o una confirmación explícita (*"Sí, publicar"*).
+### Node 6: `HITL Confirmation Gate` (Human-in-the-Loop)
+* **Function:** Pauses graph execution before any irreversible mutation. Generates an interactive preview:
+  > *"🚘 2021 Chevrolet Cruze LTZ ready to publish on MercadoLibre for $24,000,000 ARS. Confirm publication?"*
+* **Behavior:** Waits for affirmative user response (*"Yes, publish"*) or edits.
 
-### Nodo 7: `Transactional Dispatcher`
-* **Función:**
-  1. Inserta el vehículo en `DB_STOCK` o `DB_STOCK_OKM` en Supabase.
-  2. Publica en MercadoLibre VIS API con auto-rotación de tokens.
-  3. Prepara el hash para Auto-Cyborg 360 (`#autoapp=...`, `#autoapp_ig=...`).
-  4. Retorna URLs directas y confirmación.
+### Node 7: `Transactional Dispatcher`
+* **Function:**
+  1. Transactionally persists the vehicle record into `DB_STOCK` or `DB_STOCK_OKM` in Supabase.
+  2. Executes official server-to-server publication on MercadoLibre VIS API with automatic token rotation.
+  3. Prepares browser hash payloads for the Auto-Cyborg 360 extension (`#autoapp=...`, `#autoapp_ig=...`).
+  4. Returns final URLs and execution confirmation.
 
 ---
 
-## 5. 🔄 Ciclo de Vida y Próximas Evoluciones
+## 5. 🔄 Lifecycle & Future Graph Extensions
 
-A medida que incorporemos nuevas capacidades al Asistente, este grafo se expandirá en los siguientes nodos:
-- **`CRM WhatsApp Voice Node`:** Transcripción y análisis semántico de notas de voz enviadas por clientes.
-- **`Financing Calculator Node`:** Cálculo de cuotas, tasas UVA y anticipos en tiempo real durante la conversación.
-- **`Document OCR Auditor`:** Lectura de títulos del automotor o cédulas verdes para precargar datos sin error humano.
+As AutoApp grows, this living graph easily accommodates new specialized nodes without regressions:
+- **`Audio Voice Note Ingestor Node`:** Automatic transcription and intent parsing of voice messages from WhatsApp.
+- **`Loan & Financing Calculator Node`:** Real-time generation of bank loan schedules and monthly payment breakdowns during negotiation.
+- **`Vehicle Title OCR Auditor Node`:** Computer vision extraction of vehicle ownership titles (*Cédula Verde*) for automated catalog preloading.
