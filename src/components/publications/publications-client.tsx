@@ -10,7 +10,8 @@ import { VehicleDetailModal } from '@/components/stock/vehicle-detail-modal'
 import {
   ExternalLink, Loader2, Sparkles, Search, Check, Trash2, RefreshCw,
   Edit3, DollarSign, X, ChevronRight, Tag,
-  Link2, ShieldCheck, Settings, Key, CheckCircle2, Zap, LogOut, Power, UserCheck
+  Link2, ShieldCheck, Settings, Key, CheckCircle2, Zap, LogOut, Power, UserCheck,
+  Pause, Play, Square, AlertCircle
 } from 'lucide-react'
 
 type TabType = 'USADOS' | '0KM'
@@ -69,8 +70,12 @@ export function PublicationsClient({ vehicles }: Props) {
 
   // Map of publication state keyed by `${vehicleId}_${platformId}`
   const [pubStateMap, setPubStateMap] = useState<Record<string, PublicationRecord>>({})
-
   const [mounted, setMounted] = useState(false)
+
+  // MercadoLibre Live API Items & Real Status State
+  const [meliLiveItems, setMeliLiveItems] = useState<any[]>([])
+  const [isSyncingMeli, setIsSyncingMeli] = useState<boolean>(false)
+  const [lastMeliSync, setLastMeliSync] = useState<string | null>(null)
 
   // Sync state from localStorage & URL OAuth callbacks on mount
   useEffect(() => {
@@ -170,6 +175,77 @@ export function PublicationsClient({ vehicles }: Props) {
       setTimeout(() => setTaskStatusMsg(null), 3000)
     }
   }
+
+  // ── Sincronización Real con MercadoLibre API ──────────────────────────────
+  const syncMercadoLibre = async (silent: boolean = false) => {
+    try {
+      setIsSyncingMeli(true)
+      if (!silent) setTaskStatusMsg('Sincronizando estado real de publicaciones con MercadoLibre...')
+      const res = await fetch('/api/mercadolibre/sync')
+      const data = await res.json()
+      if (data.success && Array.isArray(data.items)) {
+        setMeliLiveItems(data.items)
+        setLastMeliSync(new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }))
+        if (!silent) setTaskStatusMsg(`Sincronización exitosa: ${data.items.length} publicaciones actualizadas en vivo.`)
+      }
+    } catch (err: any) {
+      console.warn('Error al sincronizar MercadoLibre:', err)
+      if (!silent) alert('Error al sincronizar con MercadoLibre: ' + err.message)
+    } finally {
+      setIsSyncingMeli(false)
+      if (!silent) {
+        setTimeout(() => setTaskStatusMsg(null), 3000)
+      }
+    }
+  }
+
+  const handleUpdateMeliStatus = async (itemId: string, newStatus: 'active' | 'paused' | 'closed' | 'deleted') => {
+    const actionLabel = newStatus === 'paused' ? 'pausar' : newStatus === 'active' ? 'reactivar' : newStatus === 'deleted' ? 'eliminar' : 'finalizar'
+    if (!confirm(`¿Confirmás ${actionLabel} la publicación en MercadoLibre?`)) return
+
+    try {
+      setTaskStatusMsg(`Actualizando estado en MercadoLibre a "${newStatus}"...`)
+      const res = await fetch('/api/mercadolibre/status', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId, status: newStatus })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setTaskStatusMsg(`Publicación actualizada con éxito.`)
+        await syncMercadoLibre(true)
+      } else {
+        alert('Aviso de MercadoLibre: ' + (data.error || 'No se pudo actualizar el estado.'))
+      }
+    } catch (err: any) {
+      alert('Error al comunicar con MercadoLibre: ' + err.message)
+    } finally {
+      setTimeout(() => setTaskStatusMsg(null), 3000)
+    }
+  }
+
+  // Matching automático de vehículo de stock con ítem verídico de MercadoLibre
+  const findMeliItem = (v: Vehicle): any | null => {
+    if (!v || meliLiveItems.length === 0) return null
+    const vMarca = (v.Marca || '').toLowerCase().trim()
+    const vModelo = (v.Modelo || '').toLowerCase().trim()
+    const firstMarca = vMarca.split(' ')[0]
+    const firstModelo = vModelo.split(' ')[0]
+
+    return meliLiveItems.find(item => {
+      const title = (item.title || '').toLowerCase()
+      const hasMarca = firstMarca && title.includes(firstMarca)
+      const hasModelo = firstModelo && title.includes(firstModelo)
+      return hasMarca && hasModelo
+    }) || null
+  }
+
+  // Auto-sincronizar al entrar en MercadoLibre
+  useEffect(() => {
+    if (mounted && selectedPlatform === 'MELI' && isMeliConnected) {
+      syncMercadoLibre(true)
+    }
+  }, [mounted, selectedPlatform, isMeliConnected])
 
   const updatePublicationStatus = (vehicleId: string, platformId: PlatformType, record: Partial<PublicationRecord>) => {
     setPubStateMap(prev => {
@@ -737,9 +813,9 @@ export function PublicationsClient({ vehicles }: Props) {
         })}
       </div>
 
-      {/* Folder Navigation Tabs & Search (Usados vs 0KM) */}
+      {/* Folder Navigation Tabs & Search (Usados vs 0KM) + MercadoLibre Live Sync */}
       <div className="card p-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-3">
           <div className="flex items-center gap-1 bg-[#0F1117] p-1.5 rounded-xl border border-[#1F2337]">
             <button
               onClick={() => setSelectedTab('USADOS')}
@@ -762,6 +838,26 @@ export function PublicationsClient({ vehicles }: Props) {
               0km ({countOkm})
             </button>
           </div>
+
+          {selectedPlatform === 'MELI' && isMeliConnected && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => syncMercadoLibre(false)}
+                disabled={isSyncingMeli}
+                title="Consultar y sincronizar publicaciones reales en vivo desde MercadoLibre"
+                className="px-3.5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-[#1A1D28] hover:bg-[#252838] border border-[#FFE60050] transition-all flex items-center gap-2 shadow-md hover:scale-105">
+                <RefreshCw size={14} className={`text-[#FFE600] ${isSyncingMeli ? 'animate-spin' : ''}`} />
+                <span>{isSyncingMeli ? 'Sincronizando...' : 'Sincronizar MeLi'}</span>
+                {lastMeliSync && (
+                  <span className="text-[10px] font-mono text-[#8B8FA8]">({lastMeliSync})</span>
+                )}
+              </button>
+              <span className="text-xs font-extrabold px-2.5 py-1 rounded-lg bg-[#FFE60020] text-[#FFE600] border border-[#FFE60040]">
+                {meliLiveItems.length} activas en MeLi
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Search */}
@@ -782,7 +878,10 @@ export function PublicationsClient({ vehicles }: Props) {
           <table className="w-full">
             <thead>
               <tr style={{ borderBottom: '1px solid #1F2337', background: '#0F1117' }}>
-                {['Vehículo', 'Precio', 'Acciones'].map(col => (
+                {(selectedPlatform === 'MELI' 
+                  ? ['Vehículo', 'Precio', 'Estado MercadoLibre', 'Acciones'] 
+                  : ['Vehículo', 'Precio', 'Acciones']
+                ).map(col => (
                   <th key={col} className="text-left px-5 py-3.5 text-xs font-extrabold uppercase tracking-wider"
                     style={{ color: '#A0A5BD' }}>
                     {col}
@@ -875,27 +974,186 @@ export function PublicationsClient({ vehicles }: Props) {
                           )}
                         </td>
     
-                        {/* Actions: Dynamic Publicar */}
+                        {/* Columna Estado Real en MercadoLibre */}
+                        {selectedPlatform === 'MELI' && (
+                          <td className="px-5 py-3.5">
+                            {(() => {
+                              const meliItem = findMeliItem(v)
+                              if (!meliItem) {
+                                return (
+                                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#1F2337] text-[#8B8FA8] border border-[#2A2F45]">
+                                    No publicado
+                                  </span>
+                                )
+                              }
+
+                              if (meliItem.status === 'active') {
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-[#22C55E15] text-[#22C55E] border border-[#22C55E30] w-fit shadow-sm">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+                                      Activa
+                                    </span>
+                                    <span className="text-[10px] font-mono text-[#8B8FA8]">{meliItem.id}</span>
+                                  </div>
+                                )
+                              }
+
+                              if (meliItem.status === 'paused') {
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-[#EAB30815] text-[#EAB308] border border-[#EAB30830] w-fit shadow-sm">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#EAB308]" />
+                                      Pausada
+                                    </span>
+                                    <span className="text-[10px] font-mono text-[#8B8FA8]">{meliItem.id}</span>
+                                  </div>
+                                )
+                              }
+
+                              if (meliItem.status === 'payment_required') {
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-[#3B82F615] text-[#3B82F6] border border-[#3B82F630] w-fit shadow-sm">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#3B82F6]" />
+                                      Pendiente Pago
+                                    </span>
+                                    <span className="text-[10px] font-mono text-[#8B8FA8]">{meliItem.id}</span>
+                                  </div>
+                                )
+                              }
+
+                              if (meliItem.status === 'closed') {
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-[#6B728015] text-[#9CA3AF] border border-[#6B728030] w-fit">
+                                      Finalizada
+                                    </span>
+                                    <span className="text-[10px] font-mono text-[#8B8FA8]">{meliItem.id}</span>
+                                  </div>
+                                )
+                              }
+
+                              return (
+                                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#1F2337] text-[#8B8FA8]">
+                                  {meliItem.status}
+                                </span>
+                              )
+                            })()}
+                          </td>
+                        )}
+    
+                        {/* Actions: Dynamic Publicar & 1-Click Controls */}
                         <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handlePublishSingle(v)}
-                              disabled={activeTask !== null}
-                              className="text-xs sm:text-sm font-extrabold px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-2 min-w-[110px] justify-center hover:scale-105"
-                              style={{
-                                background: activePlatformObj.color,
-                                color: activePlatformObj.textColor ?? '#FFFFFF',
-                                border: 'none',
-                                cursor: 'pointer'
-                              }}>
-                              {isLoading ? (
-                                <Loader2 size={15} className="animate-spin" />
-                              ) : (
-                                <Sparkles size={15} />
-                              )}
-                              <span>{isLoading ? 'Publicando...' : 'Publicar'}</span>
-                            </button>
-                          </div>
+                          {selectedPlatform === 'MELI' ? (
+                            (() => {
+                              const meliItem = findMeliItem(v)
+
+                              if (meliItem) {
+                                return (
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {/* Link oficial para ver publicación */}
+                                    <a
+                                      href={meliItem.permalink}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Abrir publicación en MercadoLibre"
+                                      className="p-2 rounded-xl bg-[#FFE60015] text-[#FFE600] border border-[#FFE60030] hover:bg-[#FFE60025] transition-all flex items-center justify-center">
+                                      <ExternalLink size={15} />
+                                    </a>
+
+                                    {/* Botones de Pausar / Reactivar */}
+                                    {meliItem.status === 'active' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateMeliStatus(meliItem.id, 'paused')}
+                                        title="Pausar publicación en MercadoLibre (no consume visitas y se oculta de búsquedas)"
+                                        className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#EAB308] bg-[#EAB30815] border border-[#EAB30830] hover:bg-[#EAB30825] transition-all flex items-center gap-1">
+                                        <Pause size={13} />
+                                        <span>Pausar</span>
+                                      </button>
+                                    )}
+
+                                    {meliItem.status === 'paused' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateMeliStatus(meliItem.id, 'active')}
+                                        title="Reactivar publicación en MercadoLibre (volverá a ser visible al público)"
+                                        className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#22C55E] bg-[#22C55E15] border border-[#22C55E30] hover:bg-[#22C55E25] transition-all flex items-center gap-1">
+                                        <Play size={13} />
+                                        <span>Reactivar</span>
+                                      </button>
+                                    )}
+
+                                    {/* Pendiente de Pago */}
+                                    {meliItem.status === 'payment_required' && (
+                                      <a
+                                        href={meliItem.permalink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title="Completar activación o pago en MercadoLibre"
+                                        className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#3B82F6] bg-[#3B82F615] border border-[#3B82F630] hover:bg-[#3B82F625] transition-all flex items-center gap-1">
+                                        <ExternalLink size={13} />
+                                        <span>Activar</span>
+                                      </a>
+                                    )}
+
+                                    {/* Descartar / Eliminar */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateMeliStatus(meliItem.id, 'deleted')}
+                                      title="Eliminar publicación de MercadoLibre"
+                                      className="p-2 rounded-xl text-[#EF4444] bg-[#EF444410] border border-[#EF444425] hover:bg-[#EF444420] transition-all flex items-center justify-center">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                )
+                              }
+
+                              // Si no está publicado aún en MeLi
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePublishSingle(v)}
+                                  disabled={activeTask !== null}
+                                  className="text-xs sm:text-sm font-extrabold px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-2 min-w-[110px] justify-center hover:scale-105"
+                                  style={{
+                                    background: activePlatformObj.color,
+                                    color: activePlatformObj.textColor ?? '#FFFFFF',
+                                    border: 'none',
+                                    cursor: 'pointer'
+                                  }}>
+                                  {isLoading ? (
+                                    <Loader2 size={15} className="animate-spin" />
+                                  ) : (
+                                    <Sparkles size={15} />
+                                  )}
+                                  <span>{isLoading ? 'Publicando...' : 'Publicar'}</span>
+                                </button>
+                              )
+                            })()
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handlePublishSingle(v)}
+                                disabled={activeTask !== null}
+                                className="text-xs sm:text-sm font-extrabold px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-2 min-w-[110px] justify-center hover:scale-105"
+                                style={{
+                                  background: activePlatformObj.color,
+                                  color: activePlatformObj.textColor ?? '#FFFFFF',
+                                  border: 'none',
+                                  cursor: 'pointer'
+                                }}>
+                                {isLoading ? (
+                                  <Loader2 size={15} className="animate-spin" />
+                                ) : (
+                                  <Sparkles size={15} />
+                                )}
+                                <span>{isLoading ? 'Publicando...' : 'Publicar'}</span>
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )
