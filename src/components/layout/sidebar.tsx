@@ -98,15 +98,27 @@ export function Sidebar() {
 
       {/* Bottom */}
       <div className="flex flex-col gap-1 w-full px-2">
-        <Link href="/configuracion" title="Configuración" prefetch={true}
-          className="group relative flex items-center justify-center w-full h-10 rounded-lg transition-all"
-          style={{ color: '#555870' }}>
-          <Settings size={20} />
-          <span className="absolute left-full ml-2 px-2 py-1 rounded text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50"
-            style={{ background: '#1A1D28', color: '#E8EAED', border: '1px solid #2A2F45' }}>
-            Configuración
-          </span>
-        </Link>
+        {(() => {
+          const isConfigActive = pathname.startsWith('/configuracion')
+          return (
+            <Link href="/configuracion" title="Configuración" prefetch={true}
+              className="group relative flex items-center justify-center w-full h-10 rounded-lg transition-all"
+              style={{
+                background: isConfigActive ? '#FACC1520' : 'transparent',
+                color: isConfigActive ? '#FACC15' : '#555870',
+              }}>
+              {isConfigActive && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r"
+                  style={{ background: '#FACC15' }} />
+              )}
+              <Settings size={20} />
+              <span className="absolute left-full ml-2 px-2 py-1 rounded text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50"
+                style={{ background: '#1A1D28', color: '#E8EAED', border: '1px solid #2A2F45' }}>
+                Configuración
+              </span>
+            </Link>
+          )
+        })()}
 
         <button onClick={handleLogout} title="Cerrar sesión"
           className="group relative flex items-center justify-center w-full h-10 rounded-lg transition-all"
