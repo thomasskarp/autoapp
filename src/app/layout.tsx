@@ -11,6 +11,9 @@ const jakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "AutoApp — Software para Agencias de Autos",
   description: "ERP + CRM profesional para agencias de autos. Gestioná tu stock, leads y publicaciones desde un solo lugar.",
+  other: {
+    'darkreader-lock': 'darkreader-lock',
+  },
 };
 
 import { InfoPriceProvider } from "@/context/info-price-context";
@@ -22,6 +25,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" className="dark" suppressHydrationWarning>
+      <head>
+        <meta name="darkreader-lock" content="darkreader-lock" />
+      </head>
       <body className={`${jakarta.variable} font-sans antialiased text-[#F3F4F6]`} suppressHydrationWarning>
         <InfoPriceProvider>
           {children}

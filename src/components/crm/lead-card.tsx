@@ -2,30 +2,49 @@
 
 import { Lead } from '@/lib/supabase/types'
 import { timeAgo, stageConfig } from '@/lib/utils'
-import { Car, MessageCircle, Clock, Sparkles } from 'lucide-react'
+import { Car, MessageSquare, Clock, Send, Zap, MessageCircle, ArrowRight } from 'lucide-react'
 
-const SOURCE_STYLES: Record<string, { bg: string; color: string; label: string }> = {
-  ML:        { bg: '#F59E0B20', color: '#F59E0B', label: 'MercadoLibre' },
-  ML_CHAT:   { bg: '#F59E0B20', color: '#F59E0B', label: 'MercadoLibre' },
-  WHATSAPP:  { bg: '#25D36620', color: '#25D366', label: 'WhatsApp' },
-  WA:        { bg: '#25D36620', color: '#25D366', label: 'WhatsApp' },
-  FACEBOOK:  { bg: '#1877F220', color: '#1877F2', label: 'Facebook' },
-  FB:        { bg: '#1877F220', color: '#1877F2', label: 'Facebook' },
-  INSTAGRAM: { bg: '#E1306C20', color: '#E1306C', label: 'Instagram' },
-  IG:        { bg: '#E1306C20', color: '#E1306C', label: 'Instagram' },
+interface ChannelStyle {
+  bg: string
+  color: string
+  border: string
+  label: string
+  iconType: 'meli' | 'ig_dm' | 'ig_comment' | 'fb_msg' | 'fb_comment' | 'wa' | 'direct'
 }
 
-const TEMP_STYLES: Record<string, { bg: string; color: string; label: string; icon: string }> = {
-  CALIENTE: { bg: 'rgba(239, 68, 68, 0.18)', color: '#F87171', label: 'Caliente', icon: '🔥' },
-  TIBIO:    { bg: 'rgba(245, 158, 11, 0.18)', color: '#FBBF24', label: 'Tibio', icon: '🟡' },
-  FRIO:     { bg: 'rgba(59, 130, 246, 0.18)', color: '#60A5FA', label: 'Frío', icon: '❄️' },
+function detectChannel(lead: Lead): ChannelStyle {
+  const id = lead.ID || ''
+  const notas = lead.Notas || ''
+  const tipo = (lead as any).Tipo_Interaccion || (lead as any).Origen || ''
+  const combined = `${id} ${notas} ${tipo}`.toLowerCase()
+
+  if (id.startsWith('meli_') || combined.includes('mercadolibre') || combined.includes('meli')) {
+    return { bg: '#FFE60020', color: '#FFE600', border: '#FFE60040', label: 'MercadoLibre', iconType: 'meli' }
+  }
+  if (id.startsWith('ig_dm_') || combined.includes('instagram dm')) {
+    return { bg: '#E1306C20', color: '#E1306C', border: '#E1306C40', label: 'Instagram DM', iconType: 'ig_dm' }
+  }
+  if (id.startsWith('ig_c_') || combined.includes('instagram')) {
+    return { bg: '#E1306C15', color: '#F472B6', border: '#E1306C30', label: 'Instagram Post', iconType: 'ig_comment' }
+  }
+  if (id.startsWith('fb_msg_') || combined.includes('facebook messenger') || combined.includes('messenger')) {
+    return { bg: '#1877F220', color: '#60A5FA', border: '#1877F240', label: 'FB Messenger', iconType: 'fb_msg' }
+  }
+  if (id.startsWith('fb_c_') || combined.includes('facebook')) {
+    return { bg: '#1877F215', color: '#38BDF8', border: '#1877F230', label: 'Facebook Muro', iconType: 'fb_comment' }
+  }
+  if (lead.Telefono || combined.includes('whatsapp') || combined.includes('wa')) {
+    return { bg: '#25D36620', color: '#22C55E', border: '#25D36640', label: 'WhatsApp', iconType: 'wa' }
+  }
+  return { bg: '#FACC1520', color: '#FACC15', border: '#FACC1530', label: 'Web Directo', iconType: 'direct' }
 }
 
-function detectSource(lead: Lead) {
-  const keys = Object.keys(SOURCE_STYLES)
-  const tipo = (lead as any).Tipo_Interaccion ?? (lead as any).Origen ?? ''
-  const found = keys.find(k => tipo.toUpperCase().includes(k))
-  return found ? SOURCE_STYLES[found] : { bg: '#FACC1520', color: '#FACC15', label: 'Directo' }
+function extractLastMessage(lead: Lead): string {
+  if (!lead.Notas) return 'Cliente interesado en consultar por el vehículo.'
+  const quoteMatch = lead.Notas.match(/"([^"]+)"/)
+  if (quoteMatch && quoteMatch[1]) return quoteMatch[1].trim()
+  const firstLine = lead.Notas.split('\n')[0].replace(/^\[[^\]]+\]\s*/, '').trim()
+  return firstLine || 'Consulta recibida en salón'
 }
 
 interface Props {
@@ -35,9 +54,11 @@ interface Props {
 }
 
 export function LeadCard({ lead, isSelected, onClick }: Props) {
-  const source = detectSource(lead)
-  const stage = stageConfig[lead.Etapa ?? 'NUEVO']
-  const tempStyle = lead.Temperatura ? TEMP_STYLES[lead.Temperatura] : TEMP_STYLES.TIBIO
+  const channel = detectChannel(lead)
+  const currentStage = lead.Etapa ?? 'SIN_RESPONDER'
+  const stage = stageConfig[currentStage] || stageConfig['SIN_RESPONDER']
+  const messagePreview = extractLastMessage(lead)
+  const isUnanswered = currentStage === 'SIN_RESPONDER' || currentStage === 'NUEVO'
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData('leadId', lead.ID)
@@ -45,60 +66,86 @@ export function LeadCard({ lead, isSelected, onClick }: Props) {
 
   return (
     <div
-      className="card card-hover p-3 cursor-pointer select-none relative group"
+      className={`p-3.5 rounded-2xl cursor-pointer select-none relative group transition-all duration-200 shadow-md ${
+        isSelected
+          ? 'bg-[#181B27] border-2 border-[#FACC15] shadow-xl scale-[1.02]'
+          : 'bg-[#10131D] border border-[#1E2235] hover:border-[#343A54] hover:bg-[#141724]'
+      }`}
       draggable
       onDragStart={handleDragStart}
       onClick={onClick}
       style={{
-        borderColor: isSelected ? '#FACC15' : undefined,
-        borderLeft: `3px solid ${stage.color}`,
-        borderRadius: '10px',
-        transition: 'all 0.15s',
+        borderLeftWidth: '4px',
+        borderLeftColor: stage.color
       }}>
 
-      {/* Header with Name & Temperature Badge */}
-      <div className="flex items-start justify-between gap-1.5 mb-1.5">
-        <p className="text-sm font-semibold text-[#E8EAED] truncate leading-tight">
+      {/* Card Header: Channel Badge + Time */}
+      <div className="flex items-center justify-between gap-1.5 mb-2">
+        <span
+          className="text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 border"
+          style={{ background: channel.bg, color: channel.color, borderColor: channel.border }}>
+          {channel.iconType === 'meli' && <Zap size={10} />}
+          {(channel.iconType === 'ig_dm' || channel.iconType === 'fb_msg') && <Send size={10} />}
+          {(channel.iconType === 'ig_comment' || channel.iconType === 'fb_comment') && <MessageSquare size={10} />}
+          {channel.iconType === 'wa' && <MessageCircle size={10} />}
+          <span>{channel.label}</span>
+        </span>
+
+        <div className="flex items-center gap-1 text-[#8B8FA8] text-[10px] font-mono">
+          <Clock size={10} className="text-[#64748B]" />
+          <span>{timeAgo(lead.created_at)}</span>
+        </div>
+      </div>
+
+      {/* Customer Name */}
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <p className="text-xs sm:text-sm font-black text-white truncate leading-tight">
           {lead.Nombre_Cliente}
         </p>
 
-        {tempStyle && (
-          <span
-            className="text-[9px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-1 flex-shrink-0"
-            style={{ background: tempStyle.bg, color: tempStyle.color }}
-            title={`Temperatura: ${tempStyle.label}`}>
-            <span>{tempStyle.icon}</span>
-            <span>{tempStyle.label}</span>
+        {isUnanswered && (
+          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-[#EF444420] text-[#EF4444] border border-[#EF444440] flex items-center gap-1 animate-pulse flex-shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444]" />
+            <span>Sin responder</span>
           </span>
         )}
       </div>
 
-      {/* Car interest */}
+      {/* Car of interest */}
       {lead.Auto_Interes && (
-        <div className="flex items-center gap-1.5 mb-2">
-          <Car size={11} style={{ color: '#555870', flexShrink: 0 }} />
-          <span className="text-xs truncate text-[#8B8FA8]">{lead.Auto_Interes}</span>
+        <div className="flex items-center gap-1.5 mb-2.5">
+          <Car size={12} className="text-[#60A5FA] flex-shrink-0" />
+          <span className="text-xs font-semibold truncate text-[#94A3B8]">
+            {lead.Auto_Interes}
+          </span>
         </div>
       )}
 
-      {/* AI Next Best Action Preview */}
-      {lead.Next_Best_Action && (
-        <div className="mb-2 p-1.5 rounded bg-[#131620] border border-[#FACC1520] flex items-start gap-1 text-[10px] text-[#FDE047] leading-tight">
-          <Sparkles size={10} className="text-[#FACC15] mt-0.5 flex-shrink-0" />
-          <span className="truncate">{lead.Next_Best_Action}</span>
-        </div>
-      )}
+      {/* Live Chat Message Preview Bubble */}
+      <div className="p-2.5 rounded-xl bg-[#080A10] border border-[#1A1E2E] flex items-start gap-2 mb-2.5 group-hover:border-[#2A314A] transition-colors">
+        <MessageSquare size={13} className="text-[#38BDF8] flex-shrink-0 mt-0.5" />
+        <p className="text-[11px] text-[#E2E8F0] font-medium leading-relaxed line-clamp-2 italic">
+          &quot;{messagePreview}&quot;
+        </p>
+      </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between mt-1">
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-          style={{ background: source.bg, color: source.color }}>
-          {source.label}
+      {/* Card Action Button: Open Chat */}
+      <div className="flex items-center justify-between pt-1 border-t border-[#1A1E2E]">
+        <span className="text-[10px] font-bold text-[#8B8FA8] uppercase tracking-wider">
+          {stage.label}
         </span>
-        <div className="flex items-center gap-1">
-          <Clock size={10} style={{ color: '#555870' }} />
-          <span className="text-[10px]" style={{ color: '#555870' }}>{timeAgo(lead.created_at)}</span>
-        </div>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClick()
+          }}
+          className="px-2.5 py-1 rounded-lg text-[11px] font-black text-[#38BDF8] bg-[#38BDF815] hover:bg-[#38BDF825] border border-[#38BDF830] transition-all flex items-center gap-1 group-hover:scale-105">
+          <MessageCircle size={11} />
+          <span>Responder Chat</span>
+          <ArrowRight size={11} />
+        </button>
       </div>
     </div>
   )

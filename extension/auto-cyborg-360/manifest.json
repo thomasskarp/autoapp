@@ -15,13 +15,16 @@
   "permissions": [
     "storage",
     "activeTab",
-    "clipboardWrite"
+    "clipboardWrite",
+    "clipboardRead"
   ],
   "host_permissions": [
+    "<all_urls>",
     "*://www.facebook.com/*",
     "*://web.whatsapp.com/*",
     "*://www.instagram.com/*",
     "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
     "https://*.vercel.app/*"
   ],
   "background": {
@@ -30,13 +33,29 @@
   "content_scripts": [
     {
       "matches": [
+        "*://web.whatsapp.com/*"
+      ],
+      "js": ["whatsapp-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
         "*://www.facebook.com/marketplace/create/vehicle*",
         "*://www.facebook.com/marketplace/create/*",
         "*://web.whatsapp.com/*",
-        "*://www.instagram.com/*"
+        "*://www.instagram.com/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
       ],
       "js": ["content.js"],
-      "run_at": "document_end"
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["whatsapp-main.js"],
+      "matches": ["*://web.whatsapp.com/*"]
     }
   ]
 }

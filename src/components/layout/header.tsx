@@ -7,10 +7,12 @@ interface HeaderProps {
   subtitle?: string
   agencyName?: string
   userEmail?: string
+  titleAddon?: React.ReactNode
+  titleExtra?: React.ReactNode
   actions?: React.ReactNode
 }
 
-export function Header({ title, subtitle, agencyName, actions }: HeaderProps) {
+export function Header({ title, subtitle, agencyName, titleAddon, titleExtra, actions }: HeaderProps) {
   return (
     <header className="flex items-center justify-between px-6 py-4"
       style={{ borderBottom: '1px solid #1F2337', background: '#0F1117' }}>
@@ -18,6 +20,8 @@ export function Header({ title, subtitle, agencyName, actions }: HeaderProps) {
       {/* Left: Title + Reserved Agency Name Slot */}
       <div className="flex items-center gap-3">
         <h1 className="text-xl sm:text-2xl font-black tracking-tight" style={{ color: '#FFFFFF' }}>{title}</h1>
+        {titleAddon}
+        {titleExtra}
         {agencyName ? (
           <span className="text-xs sm:text-sm font-extrabold px-3 py-1 rounded-lg bg-[#1A1D28] border border-[#2A2F45] text-[#FACC15] tracking-wide">
             {agencyName}

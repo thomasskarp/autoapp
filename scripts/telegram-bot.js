@@ -70,18 +70,22 @@ async function poll() {
 
         // Reenviar update al webhook interno de Next.js
         try {
-          await fetch(`${appUrl}/api/bot/telegram`, {
+          const apiRes = await fetch(`${appUrl}/api/bot/telegram`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(update)
+            body: JSON.stringify(update),
+            signal: AbortSignal.timeout(60000)
           })
+          if (!apiRes.ok) {
+            console.error(`⚠️ API respondió con código: ${apiRes.status}`)
+          }
         } catch (postErr) {
           console.error('❌ Error al procesar en API local:', postErr.message)
         }
       }
     }
   } catch (err) {
-    if (!err.message?.includes('timeout')) {
+    if (!err.message?.includes('timeout') && !err.message?.includes('aborted')) {
       console.error('⚠️ Error en polling de Telegram:', err.message)
     }
   }

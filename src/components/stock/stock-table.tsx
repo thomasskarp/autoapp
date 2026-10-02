@@ -1,17 +1,18 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Vehicle } from '@/lib/supabase/types'
-import { formatPrice, formatKm, vehicleName, getVehicleCoverImage } from '@/lib/utils'
+import { formatPrice, formatKm, vehicleName, getVehicleCoverImage, compareVehiclesStable } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { VehicleDetailModal } from './vehicle-detail-modal'
 import { PublishModal } from './publish-modal'
 import { VehicleManagementModal } from './vehicle-management-modal'
+import { VehicleCrmModal } from '@/components/crm/vehicle-crm-modal'
 import { useInfoPrice } from '@/context/info-price-context'
 import {
   Search, Car, Megaphone, Trash2, ChevronDown, ChevronRight,
-  Sparkles, Check, Loader2, Settings
+  Sparkles, Check, Loader2, Settings, LayoutGrid, List, Users
 } from 'lucide-react'
 
 const ALL_STATES = ['Todos', 'DISPONIBLE', 'RESERVADO', 'SEÑADO', 'VENDIDO']
@@ -39,6 +40,16 @@ function isTempPatent(p?: string | null): boolean {
 interface Props { vehicles: Vehicle[] }
 
 export function StockTable({ vehicles }: Props) {
+  const { showInfoPrice } = useInfoPrice()
+  const router = useRouter()
+  const supabase = createClient()
+
+  // Estado local sincronizado para actualización instantánea (0ms) sin saltos
+  const [vehicleList, setVehicleList] = useState<Vehicle[]>(vehicles)
+  useEffect(() => {
+    setVehicleList(vehicles)
+  }, [vehicles])
+
   const [search, setSearch] = useState('')
   const [selectedTab, setSelectedTab] = useState<TabType>('USADOS')
   const [filterState, setFilterState] = useState('Todos')
@@ -54,8 +65,26 @@ export function StockTable({ vehicles }: Props) {
   // Selected vehicle for Internal Management & Sale Modal
   const [managingVehicle, setManagingVehicle] = useState<Vehicle | null>(null)
 
+  // Selected vehicle for CRM Cockpit Modal
+  const [crmVehicle, setCrmVehicle] = useState<Vehicle | null>(null)
+
   // Collapsed brands state for grouped view
   const [collapsedBrands, setCollapsedBrands] = useState<Record<string, boolean>>({})
+
+  // Modo de visualización: Cuadros (grid) o Lista (list)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+
+  useEffect(() => {
+    const saved = localStorage.getItem('autoapp_vehicles_view_mode') as 'grid' | 'list' | null
+    if (saved === 'grid' || saved === 'list') {
+      setViewMode(saved)
+    }
+  }, [])
+
+  const handleViewChange = (mode: 'grid' | 'list') => {
+    setViewMode(mode)
+    localStorage.setItem('autoapp_vehicles_view_mode', mode)
+  }
   
   // Pagination limit per brand to avoid rendering hundreds of cards at once
   const DEFAULT_PER_BRAND = 12
@@ -85,29 +114,26 @@ export function StockTable({ vehicles }: Props) {
     setCollapsedBrands({})
   }
 
-  const router = useRouter()
-  const supabase = createClient()
-
   // Counts by tab
-  const countUsados = useMemo(() => vehicles.filter(v => (v.Tipo_Vehiculo || 'Usado').toLowerCase() !== '0km').length, [vehicles])
-  const countOkm = useMemo(() => vehicles.filter(v => (v.Tipo_Vehiculo || '').toLowerCase() === '0km').length, [vehicles])
+  const countUsados = useMemo(() => vehicleList.filter(v => (v.Tipo_Vehiculo || 'Usado').toLowerCase() !== '0km').length, [vehicleList])
+  const countOkm = useMemo(() => vehicleList.filter(v => (v.Tipo_Vehiculo || '').toLowerCase() === '0km').length, [vehicleList])
 
   // Extract brands with counts (normalized case-insensitively)
   const brandStats = useMemo(() => {
     const map: Record<string, number> = {}
-    vehicles.forEach(v => {
+    vehicleList.forEach(v => {
       if (v.Marca) {
         const norm = normalizeBrandName(v.Marca)
         map[norm] = (map[norm] || 0) + 1
       }
     })
     const list = Object.entries(map).map(([name, count]) => ({ name, count }))
-    list.sort((a, b) => b.count - a.count)
+    list.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
     return list
-  }, [vehicles])
+  }, [vehicleList])
 
   // Filtered vehicles
-  const filtered = useMemo(() => vehicles.filter(v => {
+  const filtered = useMemo(() => vehicleList.filter(v => {
     // 1. Tab filter (Usados vs 0km)
     const isOkm = (v.Tipo_Vehiculo || '').toLowerCase() === '0km'
     if (selectedTab === 'USADOS' && isOkm) return false
@@ -126,9 +152,10 @@ export function StockTable({ vehicles }: Props) {
     const matchBrand = filterBrand === 'Todas' || normalizeBrandName(v.Marca) === normalizeBrandName(filterBrand)
 
     return matchSearch && matchState && matchBrand
-  }), [vehicles, selectedTab, search, filterState, filterBrand])
+  }), [vehicleList, selectedTab, search, filterState, filterBrand])
 
-  // Group vehicles by Brand (normalized case-insensitively)
+  // Group vehicles by Brand with deterministic, rock-solid stable sorting:
+  // Cars will NEVER jump or swap places when edited!
   const groupedByBrand = useMemo(() => {
     const groups: Record<string, Vehicle[]> = {}
     filtered.forEach(v => {
@@ -136,18 +163,56 @@ export function StockTable({ vehicles }: Props) {
       if (!groups[b]) groups[b] = []
       groups[b].push(v)
     })
-    return Object.entries(groups).sort((a, b) => b[1].length - a[1].length)
+
+    // Ordenar los vehículos dentro de cada marca de manera totalmente determinista
+    Object.keys(groups).forEach(b => {
+      groups[b].sort(compareVehiclesStable)
+    })
+
+    // Ordenar las marcas por cantidad de vehículos y desempate alfabético estable
+    return Object.entries(groups).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
   }, [filtered])
 
   const toggleBrandCollapse = (brand: string) => {
     setCollapsedBrands(prev => ({ ...prev, [brand]: !prev[brand] }))
   }
 
+  // Actualizador centralizado optimista y persistente con sincronización de caché en RAM
+  const handleUpdateVehicle = async (id: string, fieldsToUpdate: Partial<Vehicle>, isOkm?: boolean) => {
+    // 1. Actualización optimista instantánea (0ms) en la pantalla
+    setVehicleList(prev => prev.map(v => (String(v.ID) === String(id) ? { ...v, ...fieldsToUpdate } : v)))
+
+    // 2. Actualizar vehículo seleccionado si está abierto en modal
+    setSelectedVehicle(prev => (prev && String(prev.ID) === String(id) ? { ...prev, ...fieldsToUpdate } : prev))
+
+    // 3. Persistir en la API y en la memoria RAM del servidor
+    try {
+      const res = await fetch('/api/vehicles/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, isOkm, fields: fieldsToUpdate }),
+      })
+
+      if (!res.ok) {
+        throw new Error('Error al actualizar en el servidor')
+      }
+    } catch (err) {
+      console.error('Error auto-saving vehicle:', err)
+      // Fallback directo a Supabase
+      const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
+      await supabase.from(tableName).update(fieldsToUpdate).eq('ID', id)
+    }
+  }
+
   const handleDelete = async (id: string, patente: string, isOkm: boolean) => {
     if (!confirm(`¿Dar de baja el vehículo ${patente}? Esta acción no se puede deshacer.`)) return
     setLoadingId(id)
+    setVehicleList(prev => prev.filter(v => String(v.ID) !== String(id)))
     const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
     await supabase.from(tableName).delete().eq('ID', id)
+    try {
+      await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
+    } catch (e) {}
     router.refresh()
     setLoadingId(null)
   }
@@ -159,6 +224,12 @@ export function StockTable({ vehicles }: Props) {
       <VehicleDetailModal
         vehicle={selectedVehicle}
         onClose={() => setSelectedVehicle(null)}
+        onUpdateVehicle={handleUpdateVehicle}
+        onDeleted={(id) => {
+          setVehicleList(prev => prev.filter(v => String(v.ID) !== String(id)))
+          setSelectedVehicle(null)
+          router.refresh()
+        }}
       />
 
       {/* Publish Selector Modal */}
@@ -171,6 +242,12 @@ export function StockTable({ vehicles }: Props) {
       <VehicleManagementModal
         vehicle={managingVehicle}
         onClose={() => setManagingVehicle(null)}
+      />
+
+      {/* Individual Vehicle CRM Cockpit Modal */}
+      <VehicleCrmModal
+        vehicle={crmVehicle}
+        onClose={() => setCrmVehicle(null)}
       />
 
       {/* Top Bar 1: Stock vs Usados tabs + Search bar */}
@@ -199,15 +276,43 @@ export function StockTable({ vehicles }: Props) {
           </button>
         </div>
 
-        {/* Search input */}
-        <div className="relative flex-1 min-w-[220px] max-w-md">
-          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: '#8B8FA8' }} />
-          <input
-            className="input pl-10 text-sm font-semibold py-2"
-            placeholder="Buscar por marca, modelo..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+        {/* Search input + View mode toggle */}
+        <div className="flex items-center gap-2 flex-1 min-w-[260px] max-w-lg justify-end">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: '#8B8FA8' }} />
+            <input
+              className="input pl-10 text-sm font-semibold py-2 w-full"
+              placeholder="Buscar por marca, modelo..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Botones de selección de vista: Cuadros vs Lista */}
+          <div className="flex items-center gap-0.5 bg-[#0F1117] p-1 rounded-xl border border-[#1F2337] shrink-0" title="Modo de visualización">
+            <button
+              type="button"
+              onClick={() => handleViewChange('grid')}
+              title="Vista Cuadros (Tarjetas)"
+              className={`p-2 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-[#1A1D28] text-[#FACC15] shadow-sm'
+                  : 'text-[#555870] hover:text-[#9CA3AF] hover:bg-[#1A1D28]/40'
+              }`}>
+              <LayoutGrid size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleViewChange('list')}
+              title="Vista Lista (Tabla)"
+              className={`p-2 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-[#1A1D28] text-[#FACC15] shadow-sm'
+                  : 'text-[#555870] hover:text-[#9CA3AF] hover:bg-[#1A1D28]/40'
+              }`}>
+              <List size={15} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -304,19 +409,153 @@ export function StockTable({ vehicles }: Props) {
 
               {!isCollapsed && (
                 <div className="p-4 bg-[#0F1117]">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {visibleVehicles.map(v => (
-                      <VehicleInteractiveCard
-                        key={v.ID}
-                        vehicle={v}
-                        loadingId={loadingId}
-                        onSelectVehicle={setSelectedVehicle}
-                        onPublishVehicle={setPublishingVehicle}
-                        onManageVehicle={setManagingVehicle}
-                        onDelete={handleDelete}
-                      />
-                    ))}
-                  </div>
+                  {viewMode === 'grid' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {visibleVehicles.map(v => (
+                        <VehicleInteractiveCard
+                          key={v.ID}
+                          vehicle={v}
+                          loadingId={loadingId}
+                          onSelectVehicle={setSelectedVehicle}
+                          onPublishVehicle={setPublishingVehicle}
+                          onManageVehicle={setManagingVehicle}
+                          onOpenCrm={setCrmVehicle}
+                          onUpdateVehicle={handleUpdateVehicle}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-[#1F2337] bg-[#0A0C13]">
+                      <table className="w-full">
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #1F2337', background: '#0F1117' }}>
+                            <th className="text-left px-5 py-3 text-xs font-extrabold uppercase tracking-wider text-[#A0A5BD]">
+                              Vehículo
+                            </th>
+                            <th className="text-left px-5 py-3 text-xs font-extrabold uppercase tracking-wider text-[#A0A5BD]">
+                              Precio
+                            </th>
+                            {showInfoPrice && (
+                              <th className="text-left px-5 py-3 text-xs font-extrabold uppercase tracking-wider text-[#FACC15]">
+                                Precio Info
+                              </th>
+                            )}
+                            <th className="text-left px-5 py-3 text-xs font-extrabold uppercase tracking-wider text-[#A0A5BD]">
+                              Estado
+                            </th>
+                            <th className="text-right px-5 py-3 text-xs font-extrabold uppercase tracking-wider text-[#A0A5BD]">
+                              Acciones
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleVehicles.map(v => {
+                            const coverImg = getVehicleCoverImage(v)
+                            const isOkm = (v.Tipo_Vehiculo || '').toLowerCase() === '0km'
+
+                            return (
+                              <tr key={v.ID} className="border-b border-[#1F2337]/60 hover:bg-[#1A1D28] transition-colors">
+                                {/* Columna Vehículo */}
+                                <td className="px-5 py-3.5">
+                                  <div
+                                    className="flex items-center gap-3 cursor-pointer group"
+                                    onClick={() => setSelectedVehicle(v)}>
+                                    <div className="w-12 h-9 rounded-lg overflow-hidden bg-[#1A1D28] flex-shrink-0 flex items-center justify-center border border-[#2A2F45] relative">
+                                      {coverImg ? (
+                                        <img
+                                          src={coverImg}
+                                          loading="lazy"
+                                          decoding="async"
+                                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                          alt=""
+                                          onError={e => { e.currentTarget.style.display = 'none' }}
+                                        />
+                                      ) : (
+                                        <span className="text-[9px] font-bold text-[#555870]">SIN FOTO</span>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-bold uppercase text-white group-hover:text-[#FACC15] transition-colors">
+                                        {vehicleName(v)}
+                                      </p>
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        {v.Patente && !isTempPatent(v.Patente) && (
+                                          <span className="text-xs font-mono font-bold text-[#A0A5BD]">
+                                            {v.Patente}
+                                          </span>
+                                        )}
+                                        {isOkm ? (
+                                          <span className="text-[10px] font-extrabold text-[#FACC15] bg-[#FACC1515] px-1.5 py-0.5 rounded">
+                                            0KM
+                                          </span>
+                                        ) : (
+                                          <span className="text-xs text-[#8B8FA8] font-semibold">
+                                            {formatKm(v.Km)}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Columna Precio */}
+                                <td className="px-5 py-3.5">
+                                  <span className="text-sm sm:text-base font-black text-[#FACC15]">
+                                    {formatPrice(v.Precio_Venta)}
+                                  </span>
+                                </td>
+
+                                {/* Columna Precio Info */}
+                                {showInfoPrice && (
+                                  <td className="px-5 py-3.5">
+                                    <span className="text-xs sm:text-sm font-extrabold text-[#E5E7EB]">
+                                      {v.Precio_Info ? formatPrice(v.Precio_Info) : '—'}
+                                    </span>
+                                  </td>
+                                )}
+
+                                {/* Columna Estado */}
+                                <td className="px-5 py-3.5">
+                                  <span className="text-xs font-bold text-[#A0A5BD] bg-[#1A1D28] px-2.5 py-1 rounded-md border border-[#2A2F45]">
+                                    {v.Estado || 'DISPONIBLE'}
+                                  </span>
+                                </td>
+
+                                {/* Columna Acciones */}
+                                <td className="px-5 py-3.5 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setManagingVehicle(v)}
+                                      title="Ficha Interna / Editar"
+                                      className="p-2 rounded-lg bg-[#141824] hover:bg-[#1F2337] border border-[#252A3D] text-[#A0A5BD] hover:text-white transition-all cursor-pointer">
+                                      <Settings size={15} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPublishingVehicle(v)}
+                                      title="Publicar en Redes y Portales"
+                                      className="p-2 rounded-lg bg-[#141824] hover:bg-[#FACC1520] border border-[#252A3D] text-[#A0A5BD] hover:text-[#FACC15] transition-all cursor-pointer">
+                                      <Megaphone size={15} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCrmVehicle(v)}
+                                      title={`Acceder al CRM de ${vehicleName(v)}`}
+                                      className="px-3 py-2 rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 hover:scale-105 active:scale-95 cursor-pointer"
+                                      style={{ background: '#FACC15', color: '#000000', border: 'none' }}>
+                                      <Users size={14} />
+                                      <span>CRM</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
                   {/* Smart Batch Pagination Controls */}
                   {hasMore && (
@@ -353,6 +592,8 @@ function VehicleInteractiveCard({
   onSelectVehicle,
   onPublishVehicle,
   onManageVehicle,
+  onOpenCrm,
+  onUpdateVehicle,
   onDelete
 }: {
   vehicle: Vehicle
@@ -360,10 +601,11 @@ function VehicleInteractiveCard({
   onSelectVehicle: (v: Vehicle) => void
   onPublishVehicle: (v: Vehicle) => void
   onManageVehicle: (v: Vehicle) => void
-  onDelete: (id: string, patente: string, isOkm: boolean) => void
+  onOpenCrm: (v: Vehicle) => void
+  onUpdateVehicle: (id: string, fields: Partial<Vehicle>, isOkm?: boolean) => Promise<void>
+  onDelete?: (id: string, patente: string, isOkm: boolean) => void
 }) {
   const router = useRouter()
-  const supabase = createClient()
   const { showInfoPrice } = useInfoPrice()
 
   const isOkm = (v.Tipo_Vehiculo || '').toLowerCase() === '0km'
@@ -376,12 +618,11 @@ function VehicleInteractiveCard({
   const [autoSaving, setAutoSaving] = useState(false)
   const [savedSuccess, setSavedSuccess] = useState(false)
 
-  // Trigger instant auto-save to Supabase on blur / Enter
+  // Trigger instant auto-save to Supabase & RAM cache on blur / Enter
   const saveFieldChange = async (fieldName: string, value: any) => {
     setAutoSaving(true)
-    const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
 
-    let updateData: Record<string, any> = {}
+    let updateData: Partial<Vehicle> = {}
     if (fieldName === 'price') {
       updateData.Precio_Venta = parseFloat(value.toString().replace(/[^0-9.]/g, '')) || 0
     } else if (fieldName === 'price_info') {
@@ -395,10 +636,9 @@ function VehicleInteractiveCard({
     }
 
     try {
-      await supabase.from(tableName).update(updateData).eq('ID', v.ID)
+      await onUpdateVehicle(v.ID, updateData, isOkm)
       setSavedSuccess(true)
       setTimeout(() => setSavedSuccess(false), 2000)
-      router.refresh()
     } catch (err) {
       console.error('Error auto-saving vehicle inline edit:', err)
     } finally {
@@ -632,11 +872,12 @@ function VehicleInteractiveCard({
           </button>
 
           <button
-            onClick={() => onDelete(v.ID, v.Patente || name, isOkm)}
-            title="Eliminar Vehículo"
-            className="flex items-center justify-center p-2 rounded-lg text-xs font-semibold transition-all hover:bg-red-500/20"
-            style={{ background: '#1A1D28', color: '#EF4444', border: '1px solid #2A2F45' }}>
-            <Trash2 size={15} />
+            onClick={() => onOpenCrm(v)}
+            title={`Acceder al CRM de ${name}`}
+            className="flex items-center justify-center gap-1.5 p-2 rounded-lg text-xs font-black transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-sm"
+            style={{ background: '#FACC15', color: '#000000', border: 'none' }}>
+            <Users size={14} />
+            <span className="text-[11px] font-black">CRM</span>
           </button>
         </div>
       </div>

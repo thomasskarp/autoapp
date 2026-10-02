@@ -5,6 +5,8 @@ import { RecentStock } from '@/components/dashboard/recent-stock'
 import { RecentLeads } from '@/components/dashboard/recent-leads'
 import { StockByBrandChart } from '@/components/dashboard/stock-chart'
 
+export const revalidate = 30
+
 export default async function DashboardPage() {
   const supabase = await createClient()
 

@@ -105,6 +105,10 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
         if (err) throw err
       }
 
+      try {
+        await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
+      } catch (e) {}
+
       router.push('/stock')
       router.refresh()
     } catch (err: any) {
@@ -286,14 +290,13 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
           </div>
 
           <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: '#8B8FA8' }}>Anticipo / Mínimo de Entrega ($ ARS)</label>
+            <label className="block text-xs font-medium mb-1" style={{ color: '#8B8FA8' }}>Anticipo / Mínimo de Entrega</label>
             <input
               type="text"
-              inputMode="numeric"
               className="input"
-              placeholder="8.500.000"
-              value={formatNumberDots(formData.Precio_entrega)}
-              onChange={e => handleChange('Precio_entrega', parseNumberFromDots(e.target.value) || 0)}
+              placeholder="Ej: 20.000.000 + 12 cuotas"
+              value={typeof formData.Precio_entrega === 'number' ? formatNumberDots(formData.Precio_entrega) : (formData.Precio_entrega || '')}
+              onChange={e => handleChange('Precio_entrega', e.target.value)}
             />
           </div>
 

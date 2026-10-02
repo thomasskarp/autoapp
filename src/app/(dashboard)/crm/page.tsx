@@ -1,32 +1,35 @@
-import { createClient } from '@/lib/supabase/server'
+import { getAllCachedVehicles } from '@/lib/services/vehicles-service'
 import { Header } from '@/components/layout/header'
-import { KanbanBoard } from '@/components/crm/kanban-board'
-import { Lead } from '@/lib/supabase/types'
-import { Plus } from 'lucide-react'
+import { CrmVehiclesClient } from '@/components/crm/crm-vehicles-client'
+import { Settings } from 'lucide-react'
+
+export const revalidate = 30
 
 export default async function CRMPage() {
-  const supabase = await createClient()
+  const allVehicles = await getAllCachedVehicles()
 
-  const { data: leads } = await supabase
-    .from('DB_LEADS')
-    .select('*')
-    .order('created_at', { ascending: false })
+  const isAvailable = (estado?: string) => {
+    if (!estado) return true
+    const normalized = estado.trim().toUpperCase().replace('.', '')
+    return normalized === 'DISPONIBLE' || normalized === 'AVAILABLE'
+  }
 
-  const allLeads: Lead[] = leads ?? []
+  const availableVehicles = allVehicles.filter(v => isAvailable(v.Estado))
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col h-full overflow-y-auto">
       <Header
-        title="CRM — Gestión de Leads"
-        subtitle={`${allLeads.length} leads en total`}
-        actions={
-          <button className="btn-primary">
-            <Plus size={16} /> Nuevo Lead
-          </button>
+        title="CRM"
+        titleAddon={
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1A1D28] border border-[#2A2F45] text-[#8B8FA8] hover:text-white transition-colors cursor-pointer">
+            <Settings size={14} />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" />
+          </div>
         }
       />
-      <div className="flex-1 overflow-hidden">
-        <KanbanBoard leads={allLeads} />
+
+      <div className="p-6 animate-in flex flex-col gap-6">
+        <CrmVehiclesClient vehicles={availableVehicles} />
       </div>
     </div>
   )

@@ -21,3 +21,22 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
     return true
   }
 })
+
+// Escuchar solicitudes internas desde content script para descargar imágenes sin restricciones de CSP
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'FETCH_IMAGE_BASE64' && request.url) {
+    fetch(request.url)
+      .then(res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        return res.blob()
+      })
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onloadend = () => sendResponse({ success: true, base64: reader.result })
+        reader.onerror = () => sendResponse({ success: false, error: 'Error leyendo blob' })
+        reader.readAsDataURL(blob)
+      })
+      .catch(err => sendResponse({ success: false, error: err.toString() }))
+    return true // Asíncrono
+  }
+})

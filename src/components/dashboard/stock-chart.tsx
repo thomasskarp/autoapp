@@ -8,16 +8,16 @@ const COLORS = ['#FACC15', '#FDE047', '#FF6B35', '#F59E0B', '#FDE047', '#EC4899'
 
 export function StockByBrandChart({ data }: { data: BrandData[] }) {
   return (
-    <div className="card p-5 h-full" style={{ minHeight: '240px' }}>
+    <div className="card p-5 h-full min-h-[240px]">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="font-semibold" style={{ color: '#E8EAED' }}>Stock por Marca</h3>
-          <p className="text-xs mt-0.5" style={{ color: '#8B8FA8' }}>Vehículos disponibles</p>
+          <h3 className="font-semibold text-[#E8EAED]">Stock por Marca</h3>
+          <p className="text-xs mt-0.5 text-[#8B8FA8]">Vehículos disponibles</p>
         </div>
       </div>
 
       {data.length === 0 ? (
-        <div className="flex items-center justify-center h-32" style={{ color: '#555870' }}>
+        <div className="flex items-center justify-center h-32 text-[#555870]">
           <p className="text-sm">Sin datos de stock</p>
         </div>
       ) : (

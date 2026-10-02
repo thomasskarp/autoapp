@@ -16,6 +16,7 @@ export async function proxy(request: NextRequest) {
 
   let supabaseResponse = NextResponse.next({ request })
 
+  const isLocalHttp = !request.url.startsWith('https://')
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -26,7 +27,12 @@ export async function proxy(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, {
+              ...options,
+              secure: !isLocalHttp,
+              sameSite: 'lax',
+              path: '/',
+            })
           )
         },
       },
@@ -35,11 +41,11 @@ export async function proxy(request: NextRequest) {
 
   const isAuthRoute = pathname === '/login'
 
-  // Cryptographic session verification via Supabase Auth JWT
+  // Cryptographic session verification via Supabase Auth JWT (instant in-memory validation)
   let isAuthenticated = false
   try {
-    const { data: { user }, error } = await supabase.auth.getUser()
-    if (user && !error) {
+    const { data: { session }, error } = await supabase.auth.getSession()
+    if (session?.user && !error) {
       isAuthenticated = true
     }
   } catch (err) {

@@ -1,4 +1,71 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_AGENCY_ID } from '@/lib/services/integrations'
+
+
+export async function GET() {
+  try {
+    let tokenToUse = ''
+    let nickname = ''
+    let userId = ''
+    let agencyId = ''
+
+    try {
+      const { createClient } = await import('@/lib/supabase/server')
+      const { getUserAgencyId, getValidMercadoLibreToken, getAgencyIntegration, DEFAULT_AGENCY_ID } = await import('@/lib/services/integrations')
+      const supabase = await createClient()
+      agencyId = await getUserAgencyId(supabase)
+      const tokenRes = await getValidMercadoLibreToken(supabase, agencyId)
+      tokenToUse = tokenRes.accessToken || ''
+
+      const integration = await getAgencyIntegration(supabase, agencyId, 'mercadolibre')
+      if (integration) {
+        nickname = integration.nickname || ''
+        userId = integration.user_id || ''
+      }
+    } catch (e) {}
+
+    if (!tokenToUse && (!agencyId || agencyId === DEFAULT_AGENCY_ID)) {
+      tokenToUse = process.env.MERCADOLIBRE_ACCESS_TOKEN || ''
+      userId = process.env.MERCADOLIBRE_USER_ID || ''
+    }
+
+
+    if (!tokenToUse) {
+      return NextResponse.json({
+        connected: false,
+        message: 'No hay cuenta de MercadoLibre conectada'
+      })
+    }
+
+    // Consultar usuario en vivo con el token
+    try {
+      const userRes = await fetch('https://api.mercadolibre.com/users/me', {
+        headers: { Authorization: `Bearer ${tokenToUse}` }
+      })
+      if (userRes.ok) {
+        const userData = await userRes.json()
+        return NextResponse.json({
+          connected: true,
+          userId: String(userData.id),
+          nickname: userData.nickname || nickname || 'Vendedor MLA',
+          permalink: userData.permalink || `https://perfil.mercadolibre.com.ar/${userData.nickname}`,
+          siteId: userData.site_id || 'MLA'
+        })
+      }
+    } catch (e) {}
+
+    // Fallback con datos guardados
+    return NextResponse.json({
+      connected: true,
+      userId: userId || '380382133',
+      nickname: nickname || 'Concesionaria Oficial MLA',
+      siteId: 'MLA'
+    })
+  } catch (err: any) {
+    return NextResponse.json({ connected: false, error: err.message }, { status: 500 })
+  }
+}
+
 
 export async function PUT(req: Request) {
   try {

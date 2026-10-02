@@ -6,10 +6,18 @@ import { stageConfig, timeAgo } from '@/lib/utils'
 import {
   X, Phone, MessageCircle, Car, FileText, User, Sparkles,
   Send, RefreshCw, AlertCircle, ArrowUpRight, CheckCircle2,
-  DollarSign, Bot, MessageSquare
+  DollarSign, Bot, MessageSquare, Zap, Calendar, Camera, HelpCircle, Check
 } from 'lucide-react'
 
-const STAGES: LeadStage[] = ['NUEVO', 'CONTACTADO', 'INTERESADO', 'PROPUESTA', 'CERRADO']
+const STAGES: LeadStage[] = [
+  'SIN_RESPONDER',
+  'VISITA',
+  'COTIZACION',
+  'FINANCIACION',
+  'FOTOS_INFO',
+  'CURIOSOS',
+  'CERRADO'
+]
 
 const TEMP_STYLES: Record<string, { bg: string; color: string; label: string; icon: string }> = {
   CALIENTE: { bg: 'rgba(239, 68, 68, 0.18)', color: '#F87171', label: 'Caliente', icon: '🔥' },
@@ -24,27 +32,102 @@ interface Props {
   onLeadUpdated?: (updatedLead: Lead) => void
 }
 
+function parseChannelInfo(lead: Lead) {
+  const id = lead.ID || ''
+  const notas = lead.Notas || ''
+
+  if (id.startsWith('meli_') || notas.includes('MercadoLibre')) {
+    const qMatch = notas.match(/ID_PREGUNTA:\s*(\d+)/i)
+    return {
+      channel: 'MELI',
+      label: 'MercadoLibre',
+      color: '#FFE600',
+      questionId: qMatch ? qMatch[1] : undefined
+    }
+  }
+  if (id.startsWith('ig_dm_') || notas.includes('Instagram DM')) {
+    const rMatch = notas.match(/RECIPIENT_ID:\s*(\w+)/i)
+    return {
+      channel: 'INSTAGRAM_DM',
+      label: 'Instagram DM (@okmmotors)',
+      color: '#E1306C',
+      recipientId: rMatch ? rMatch[1] : undefined
+    }
+  }
+  if (id.startsWith('ig_c_') || notas.includes('Instagram Comentario')) {
+    const cMatch = notas.match(/COMMENT_ID:\s*([^\n\r]+)/i)
+    return {
+      channel: 'INSTAGRAM_COMMENT',
+      label: 'Instagram Comentario (@okmmotors)',
+      color: '#F472B6',
+      commentId: cMatch ? cMatch[1].trim() : undefined
+    }
+  }
+  if (id.startsWith('fb_msg_') || notas.includes('Facebook Messenger')) {
+    const rMatch = notas.match(/RECIPIENT_ID:\s*(\w+)/i)
+    return {
+      channel: 'FACEBOOK_MESSENGER',
+      label: 'Facebook Messenger',
+      color: '#60A5FA',
+      recipientId: rMatch ? rMatch[1] : undefined
+    }
+  }
+  if (id.startsWith('fb_c_') || notas.includes('Facebook Comentario')) {
+    const cMatch = notas.match(/COMMENT_ID:\s*([^\n\r]+)/i)
+    return {
+      channel: 'FACEBOOK_COMMENT',
+      label: 'Facebook Comentario',
+      color: '#38BDF8',
+      commentId: cMatch ? cMatch[1].trim() : undefined
+    }
+  }
+  if (lead.Telefono || notas.includes('WhatsApp')) {
+    return {
+      channel: 'WHATSAPP',
+      label: 'WhatsApp',
+      color: '#22C55E'
+    }
+  }
+  return {
+    channel: 'DIRECT',
+    label: 'Canal Directo',
+    color: '#FACC15'
+  }
+}
+
+function extractCustomerQuestion(lead: Lead): string {
+  if (!lead.Notas) return 'Consulta por vehículo en venta.'
+  const qMatch = lead.Notas.match(/"([^"]+)"/)
+  if (qMatch && qMatch[1]) return qMatch[1].trim()
+  return lead.Notas.split('\n')[0].replace(/^\[[^\]]+\]\s*/, '').trim() || lead.Notas
+}
+
 export function LeadDetail({ lead, onClose, onStageChange, onLeadUpdated }: Props) {
-  const [activeTab, setActiveTab] = useState<'INFO' | 'AI' | 'CHAT'>('AI')
-  const [analyzing, setAnalyzing] = useState(false)
+  // Default to CHAT view so salesperson can reply immediately
+  const [activeTab, setActiveTab] = useState<'CHAT' | 'AI' | 'INFO'>('CHAT')
   const [currentLead, setCurrentLead] = useState<Lead>(lead)
-  const [quickReply, setQuickReply] = useState<string>('')
-  const [tempRationale, setTempRationale] = useState<string>('')
   
   // Chat / Interacciones
   const [interactions, setInteractions] = useState<Interaccion[]>([])
   const [loadingChat, setLoadingChat] = useState(false)
-  const [newMsgText, setNewMsgText] = useState('')
-  const [sendingMsg, setSendingMsg] = useState(false)
+  const [replyText, setReplyText] = useState('')
+  const [isSendingReply, setIsSendingReply] = useState(false)
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false)
+  const [analyzingLead, setAnalyzingLead] = useState(false)
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null)
 
-  const currentStage = currentLead.Etapa ?? 'NUEVO'
-  const currentIdx = STAGES.indexOf(currentStage as LeadStage)
+  const currentStage = (currentLead.Etapa ?? 'SIN_RESPONDER') as LeadStage
+  const stage = stageConfig[currentStage] || stageConfig['SIN_RESPONDER']
   const temp = currentLead.Temperatura ? TEMP_STYLES[currentLead.Temperatura] : TEMP_STYLES.TIBIO
+  const channelInfo = parseChannelInfo(currentLead)
+  const customerQuestion = extractCustomerQuestion(currentLead)
 
-  // Sincronizar si cambia el prop lead
+  // Sincronizar si cambia el lead seleccionado
   useEffect(() => {
     setCurrentLead(lead)
     fetchInteractions(lead.ID)
+    setReplyText('')
+    setFeedbackMsg(null)
   }, [lead.ID])
 
   const fetchInteractions = async (id: string) => {
@@ -62,390 +145,459 @@ export function LeadDetail({ lead, onClose, onStageChange, onLeadUpdated }: Prop
     }
   }
 
-  const handleRunAIIntelligence = async () => {
+  // Despachar respuesta directa al canal correspondiente y auto-clasificar con IA
+  const handleSendReply = async (manualClassification?: LeadStage) => {
+    if (!replyText.trim()) return
+
     try {
-      setAnalyzing(true)
-      const res = await fetch('/api/ai/lead-intelligence', {
+      setIsSendingReply(true)
+      setFeedbackMsg('Enviando respuesta al canal y clasificando con IA...')
+
+      const res = await fetch('/api/crm/reply-channel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: currentLead.ID,
-          lead: currentLead,
-          interactions: interactions,
-          persist: true,
-        }),
+          channel: channelInfo.channel,
+          replyText: replyText.trim(),
+          manualStage: manualClassification,
+          metadata: {
+            questionId: (channelInfo as any).questionId,
+            commentId: (channelInfo as any).commentId,
+            recipientId: (channelInfo as any).recipientId,
+            customerName: currentLead.Nombre_Cliente,
+            vehicleTitle: currentLead.Auto_Interes,
+            lastCustomerMessage: customerQuestion,
+            existingNotas: currentLead.Notas
+          }
+        })
       })
 
       const data = await res.json()
-      if (data.success && data.intelligence) {
-        const intel = data.intelligence
-        const updated: Lead = {
+
+      if (data.success) {
+        const nextStage = data.newStage as LeadStage
+        const updated = {
           ...currentLead,
-          Temperatura: intel.temperatura,
-          Next_Best_Action: intel.next_best_action,
-          AI_Summary: intel.ai_summary,
+          Etapa: nextStage,
+          Notas: `${currentLead.Notas || ''}\n\n[Respuesta Enviada]: "${replyText.trim()}"`
         }
         setCurrentLead(updated)
-        setQuickReply(intel.whatsapp_quick_reply)
-        setTempRationale(intel.temperature_rationale)
+        onStageChange(currentLead.ID, nextStage)
         if (onLeadUpdated) onLeadUpdated(updated)
+
+        // Refrescar historial
+        fetchInteractions(currentLead.ID)
+        setReplyText('')
+
+        const stageLabel = stageConfig[nextStage]?.label || nextStage
+        setFeedbackMsg(`¡Respuesta enviada con éxito! Cliente clasificado en: "${stageLabel}".`)
+        setTimeout(() => setFeedbackMsg(null), 5000)
       } else {
-        alert(data.error || 'No se pudo generar el análisis de IA')
+        alert('Aviso al responder: ' + (data.error || 'Error desconocido'))
       }
     } catch (err: any) {
-      console.error('Error llamando IA:', err)
-      alert('Error en conexión con el motor de IA')
+      alert('Error: ' + err.message)
     } finally {
-      setAnalyzing(false)
+      setIsSendingReply(false)
     }
   }
 
-  const handleSendInteraction = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    if (!newMsgText.trim()) return
-
+  // Generar sugerencia de respuesta comercial con Gemini IA
+  const handleSuggestAI = async () => {
     try {
-      setSendingMsg(true)
-      const res = await fetch('/api/crm/interactions', {
+      setIsGeneratingAI(true)
+      const res = await fetch('/api/meta/messages/ai-suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          leadId: currentLead.ID,
-          detalle: newMsgText.trim(),
-          remitente: 'ASESOR',
-          tipo: 'WHATSAPP',
-          patente: currentLead.Auto_Interes || null,
-        }),
+          customerName: currentLead.Nombre_Cliente,
+          lastMessage: customerQuestion,
+          vehicleContext: currentLead.Auto_Interes
+        })
       })
       const data = await res.json()
-      if (data.success && data.interaction) {
-        setInteractions(prev => [...prev, data.interaction])
-        setNewMsgText('')
+      if (data.success && data.suggestion) {
+        setReplyText(data.suggestion)
       }
-    } catch (err) {
-      console.error('Error enviando mensaje:', err)
+    } catch (e: any) {
+      alert('No se pudo generar la sugerencia IA: ' + e.message)
     } finally {
-      setSendingMsg(false)
+      setIsGeneratingAI(false)
     }
   }
 
-  const openWhatsApp = (customText?: string) => {
-    if (!currentLead.Telefono) return
-    const clean = currentLead.Telefono.replace(/\D/g, '')
-    const msgParam = customText ? `?text=${encodeURIComponent(customText)}` : ''
-    window.open(`https://wa.me/54${clean}${msgParam}`, '_blank')
+  // Clasificación rápida de etapa con 1 clic
+  const handleManualStageClick = async (targetStage: LeadStage) => {
+    onStageChange(currentLead.ID, targetStage)
+    const updated = { ...currentLead, Etapa: targetStage }
+    setCurrentLead(updated)
+    if (onLeadUpdated) onLeadUpdated(updated)
+    setFeedbackMsg(`Cliente movido a: "${stageConfig[targetStage]?.label}".`)
+    setTimeout(() => setFeedbackMsg(null), 3000)
+  }
+
+  const openWhatsApp = (msg?: string) => {
+    const phone = currentLead.Telefono?.replace(/[^0-9]/g, '')
+    if (!phone) return
+    const text = msg || `¡Hola ${currentLead.Nombre_Cliente}! Te escribimos de la concesionaria por tu consulta sobre el ${currentLead.Auto_Interes || 'vehículo'}.`
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank')
   }
 
   return (
-    <div className="w-96 flex-shrink-0 flex flex-col h-full bg-[#0D0F16] border-l border-[#1F2337] shadow-2xl animate-in">
+    <div className="w-full sm:w-96 md:w-[420px] bg-[#0A0C13] border-l border-[#1F2337] flex flex-col h-full shadow-2xl animate-in z-20 overflow-hidden">
+      {/* Drawer Header */}
+      <div className="p-4 border-b border-[#1F2337] bg-[#0E111A]">
+        <div className="flex items-start justify-between gap-3 mb-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span
+                className="text-[10px] font-black px-2 py-0.5 rounded-full border"
+                style={{
+                  background: `${channelInfo.color}20`,
+                  color: channelInfo.color,
+                  borderColor: `${channelInfo.color}40`
+                }}>
+                {channelInfo.label}
+              </span>
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#1F2337] bg-[#11131C]">
-        <div className="flex items-center gap-2.5 overflow-hidden">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm bg-[#FACC1520] text-[#FACC15] flex-shrink-0">
-            {currentLead.Nombre_Cliente?.[0]?.toUpperCase() ?? '?'}
+              <span
+                className="text-[10px] font-black px-2 py-0.5 rounded-full border"
+                style={{
+                  background: `${stage.color}15`,
+                  color: stage.color,
+                  borderColor: `${stage.color}40`
+                }}>
+                {stage.label}
+              </span>
+            </div>
+
+            <h3 className="text-base font-black text-white truncate">
+              {currentLead.Nombre_Cliente}
+            </h3>
+
+            {currentLead.Auto_Interes && (
+              <p className="text-xs text-[#94A3B8] font-semibold truncate flex items-center gap-1 mt-0.5">
+                <Car size={12} className="text-[#38BDF8]" />
+                <span>{currentLead.Auto_Interes}</span>
+              </p>
+            )}
           </div>
-          <div className="truncate">
-            <div className="flex items-center gap-1.5">
-              <p className="text-sm font-bold text-[#E8EAED] truncate">{currentLead.Nombre_Cliente}</p>
-              {temp && (
-                <span className="text-[9px] font-black px-1.5 py-0.5 rounded flex items-center gap-0.5 flex-shrink-0"
-                  style={{ background: temp.bg, color: temp.color }}>
-                  <span>{temp.icon}</span>
-                  <span>{temp.label}</span>
+
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#1C2030] text-[#8B8FA8] hover:text-white transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Tab Selector */}
+        <div className="flex items-center gap-1 bg-[#131724] p-1 rounded-xl border border-[#1F2337]">
+          <button
+            onClick={() => setActiveTab('CHAT')}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'CHAT' ? 'bg-[#38BDF8] text-black shadow-md' : 'text-[#8B8FA8] hover:text-white'
+            }`}>
+            <MessageSquare size={13} />
+            <span>Chat en Vivo</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('AI')}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'AI' ? 'bg-[#FACC15] text-black shadow-md' : 'text-[#8B8FA8] hover:text-white'
+            }`}>
+            <Sparkles size={13} />
+            <span>Estrategia IA</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('INFO')}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'INFO' ? 'bg-[#8B5CF6] text-white shadow-md' : 'text-[#8B8FA8] hover:text-white'
+            }`}>
+            <FileText size={13} />
+            <span>Ficha Lead</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Feedback message banner */}
+      {feedbackMsg && (
+        <div className="px-4 py-2 bg-[#22C55E15] border-b border-[#22C55E30] text-xs font-bold text-[#22C55E] flex items-center justify-between animate-in">
+          <span>{feedbackMsg}</span>
+          <button onClick={() => setFeedbackMsg(null)} className="text-[10px] text-[#8B8FA8] hover:text-white">✕</button>
+        </div>
+      )}
+
+      {/* Drawer Content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* TAB 1: CHAT EN VIVO & RESPUESTA OMNICANAL */}
+        {activeTab === 'CHAT' && (
+          <div className="flex flex-col h-full gap-3 animate-in">
+            {/* Customer Inquiry Bubble */}
+            <div className="p-3.5 rounded-2xl bg-[#121622] border border-[#232A3E] flex flex-col gap-1.5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#38BDF8] flex items-center gap-1">
+                  <User size={12} />
+                  <span>Mensaje de {currentLead.Nombre_Cliente}:</span>
                 </span>
+                <span className="text-[10px] font-mono text-[#64748B]">
+                  {timeAgo(currentLead.created_at)}
+                </span>
+              </div>
+              <p className="text-xs text-[#F1F5F9] font-medium leading-relaxed italic bg-[#0A0C12] p-2.5 rounded-xl border border-[#1A1F30]">
+                &quot;{customerQuestion}&quot;
+              </p>
+            </div>
+
+            {/* Interaction History from CRM */}
+            <div className="flex-1 overflow-y-auto max-h-48 space-y-2 pr-1">
+              {loadingChat ? (
+                <div className="py-4 text-center text-xs text-[#8B8FA8] flex items-center justify-center gap-2">
+                  <RefreshCw size={13} className="animate-spin text-[#38BDF8]" />
+                  <span>Cargando historial...</span>
+                </div>
+              ) : interactions.length === 0 ? (
+                <p className="text-[11px] text-center text-[#555870] py-2">
+                  Sin respuestas anteriores registradas para este chat.
+                </p>
+              ) : (
+                interactions.map(it => (
+                  <div
+                    key={it.ID}
+                    className="p-2.5 rounded-xl text-xs bg-[#171B28] border border-[#242C40] flex flex-col gap-1">
+                    <div className="flex items-center justify-between text-[10px] text-[#8B8FA8]">
+                      <span className="font-bold text-[#38BDF8]">{it.Vendedor || 'Agencia'}</span>
+                      <span>{it.Fecha ? new Date(it.Fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                    </div>
+                    <p className="text-[#E2E8F0] leading-snug">{it.Detalle_Conversacion}</p>
+                  </div>
+                ))
               )}
             </div>
-            <p className="text-[11px] text-[#8B8FA8] truncate">{currentLead.Telefono ?? 'Sin teléfono'}</p>
+
+            {/* In-place Reply Composer */}
+            <div className="mt-auto flex flex-col gap-2.5 pt-2 border-t border-[#1F2337]">
+              {/* AI Suggest Button */}
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={handleSuggestAI}
+                  disabled={isGeneratingAI}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#FACC15] bg-[#FACC1515] hover:bg-[#FACC1525] border border-[#FACC1535] transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50">
+                  {isGeneratingAI ? (
+                    <>
+                      <RefreshCw size={12} className="animate-spin" />
+                      <span>Generando con Gemini...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={12} />
+                      <span>⚡ Sugerir Respuesta con IA</span>
+                    </>
+                  )}
+                </button>
+
+                <span className="text-[10px] text-[#8B8FA8] font-mono">
+                  Canal: {channelInfo.label}
+                </span>
+              </div>
+
+              {/* Textarea */}
+              <textarea
+                rows={3}
+                value={replyText}
+                onChange={e => setReplyText(e.target.value)}
+                placeholder={`Escribe la respuesta para enviar por ${channelInfo.label}...`}
+                className="input w-full p-2.5 text-xs font-medium resize-none bg-[#121622] rounded-xl border-[#232A3E]"
+              />
+
+              {/* Send and Classify Action Button */}
+              <button
+                type="button"
+                onClick={() => handleSendReply()}
+                disabled={isSendingReply || !replyText.trim()}
+                className="w-full py-2.5 rounded-xl text-xs font-black text-white bg-[#38BDF8] hover:bg-[#0284c7] disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] cursor-pointer">
+                {isSendingReply ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Despachando y clasificando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={14} />
+                    <span>Enviar Respuesta y Clasificar con IA</span>
+                  </>
+                )}
+              </button>
+
+              {/* 1-Click Classification Buttons */}
+              <div className="pt-2 border-t border-[#1F2337] flex flex-col gap-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#8B8FA8]">
+                  O Clasificar Directamente con 1 Clic:
+                </span>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleManualStageClick('VISITA')}
+                    className="p-2 rounded-xl text-[11px] font-bold text-[#60A5FA] bg-[#3B82F615] hover:bg-[#3B82F625] border border-[#3B82F630] transition-all flex items-center gap-1.5">
+                    <Calendar size={12} />
+                    <span>📅 Visita al Salón</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleManualStageClick('COTIZACION')}
+                    className="p-2 rounded-xl text-[11px] font-bold text-[#F472B6] bg-[#EC489915] hover:bg-[#EC489925] border border-[#EC489930] transition-all flex items-center gap-1.5">
+                    <DollarSign size={12} />
+                    <span>💰 Cotización / Usado</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleManualStageClick('FINANCIACION')}
+                    className="p-2 rounded-xl text-[11px] font-bold text-[#A78BFA] bg-[#8B5CF615] hover:bg-[#8B5CF625] border border-[#8B5CF630] transition-all flex items-center gap-1.5">
+                    <FileText size={12} />
+                    <span>📑 Financiación</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleManualStageClick('FOTOS_INFO')}
+                    className="p-2 rounded-xl text-[11px] font-bold text-[#22D3EE] bg-[#06B6D415] hover:bg-[#06B6D425] border border-[#06B6D430] transition-all flex items-center gap-1.5">
+                    <Camera size={12} />
+                    <span>📸 Fotos / Info</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleManualStageClick('CURIOSOS')}
+                    className="p-2 rounded-xl text-[11px] font-bold text-[#94A3B8] bg-[#6B728015] hover:bg-[#6B728025] border border-[#6B728030] transition-all flex items-center gap-1.5">
+                    <HelpCircle size={12} />
+                    <span>👀 Curioso / Sin Avance</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleManualStageClick('CERRADO')}
+                    className="p-2 rounded-xl text-[11px] font-bold text-[#34D399] bg-[#10B98115] hover:bg-[#10B98125] border border-[#10B98130] transition-all flex items-center gap-1.5">
+                    <Check size={12} />
+                    <span>✅ Venta Cerrada</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#8B8FA8] hover:text-white hover:bg-[#1E2130] transition-colors cursor-pointer border-none bg-transparent">
-          <X size={16} />
-        </button>
-      </div>
+        )}
 
-      {/* Nav Tabs */}
-      <div className="flex border-b border-[#1F2337] bg-[#0F1117] text-xs font-semibold px-2">
-        <button
-          onClick={() => setActiveTab('AI')}
-          className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 border-b-2 cursor-pointer transition-colors ${
-            activeTab === 'AI' ? 'border-[#FACC15] text-[#FACC15]' : 'border-transparent text-[#8B8FA8] hover:text-white'
-          }`}>
-          <Sparkles size={13} />
-          <span>Copiloto IA</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('CHAT')}
-          className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 border-b-2 cursor-pointer transition-colors ${
-            activeTab === 'CHAT' ? 'border-[#25D366] text-[#25D366]' : 'border-transparent text-[#8B8FA8] hover:text-white'
-          }`}>
-          <MessageSquare size={13} />
-          <span>Conversación ({interactions.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('INFO')}
-          className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 border-b-2 cursor-pointer transition-colors ${
-            activeTab === 'INFO' ? 'border-[#60A5FA] text-[#60A5FA]' : 'border-transparent text-[#8B8FA8] hover:text-white'
-          }`}>
-          <FileText size={13} />
-          <span>Ficha</span>
-        </button>
-      </div>
-
-      {/* Main Body per Tab */}
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-
-        {/* TAB 1: COPILOTO IA & NEXT BEST ACTION */}
+        {/* TAB 2: ESTRATEGIA IA & GEMINI INTELLIGENCE */}
         {activeTab === 'AI' && (
           <div className="flex flex-col gap-3.5 animate-in">
-            {/* Action Bar */}
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B8FA8] flex items-center gap-1">
-                <Bot size={13} className="text-[#FACC15]" />
-                Inteligencia Comercial Gemini
+            {/* Next Best Action */}
+            <div className="p-3.5 rounded-2xl bg-[#121622] border border-[#FACC1530] flex flex-col gap-1.5">
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#FACC15] flex items-center gap-1">
+                <Sparkles size={12} /> Próxima Mejor Acción Sugerida (IA)
               </span>
-              <button
-                onClick={handleRunAIIntelligence}
-                disabled={analyzing}
-                className="btn-primary text-[11px] py-1.5 px-3 flex items-center gap-1.5 font-bold cursor-pointer bg-[#FACC15] text-black hover:bg-[#FDE047]">
-                <RefreshCw size={12} className={analyzing ? 'animate-spin' : ''} />
-                <span>{analyzing ? 'Analizando...' : 'Actualizar IA'}</span>
-              </button>
-            </div>
-
-            {/* Tarjeta de Temperatura */}
-            <div className="p-3 rounded-xl border flex flex-col gap-1.5"
-              style={{ background: temp.bg, borderColor: `${temp.color}40` }}>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#C5C9D6]">
-                  Temperatura del Lead
-                </span>
-                <span className="text-xs font-black px-2 py-0.5 rounded-full"
-                  style={{ background: `${temp.color}30`, color: temp.color }}>
-                  {temp.icon} {temp.label.toUpperCase()}
-                </span>
-              </div>
-              <p className="text-xs text-[#E8EAED] leading-relaxed">
-                {tempRationale || (
-                  currentLead.Temperatura === 'CALIENTE'
-                    ? 'Lead con alta urgencia de compra o confirmación de anticipo. Prioridad máxima de atención.'
-                    : currentLead.Temperatura === 'FRIO'
-                    ? 'Baja interacción reciente o solo consulta de precios sin avance.'
-                    : 'Evaluando opciones comerciales y financiamiento disponible.'
-                )}
+              <p className="text-xs text-[#E2E8F0] font-semibold leading-relaxed">
+                {currentLead.Next_Best_Action || 'Enviar propuesta con cuotas fijas o invitar a ver la unidad en el salón de ventas para acelerar el cierre.'}
               </p>
             </div>
 
-            {/* Next Best Action Card */}
-            <div className="p-3.5 rounded-xl border border-[#FACC1550] bg-gradient-to-br from-[#FACC1510] to-[#131620] flex flex-col gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#FACC15]">
-                <Sparkles size={14} />
-                <span>Next Best Action (Acción Inmediata)</span>
-              </div>
-              <p className="text-xs text-white font-medium leading-relaxed">
-                {currentLead.Next_Best_Action || 'Haz clic en "Actualizar IA" para que Gemini formule la estrategia óptima de cierre para este cliente.'}
-              </p>
-            </div>
-
-            {/* Resumen Ejecutivo IA */}
+            {/* AI Summary */}
             {currentLead.AI_Summary && (
-              <div className="p-3 rounded-xl bg-[#131620] border border-[#1F2337] flex flex-col gap-1.5">
+              <div className="p-3.5 rounded-2xl bg-[#121622] border border-[#1F2337] flex flex-col gap-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B8FA8]">
-                  Resumen Ejecutivo de la Cuenta
+                  Resumen Ejecutivo
                 </span>
-                <p className="text-xs text-[#C5C9D6] leading-relaxed">
+                <p className="text-xs text-[#CBD5E1] leading-relaxed">
                   {currentLead.AI_Summary}
                 </p>
               </div>
             )}
 
-            {/* Respuesta Rápida Sugerida por IA */}
-            {quickReply && (
-              <div className="p-3 rounded-xl bg-[#131620] border border-[#25D36640] flex flex-col gap-2">
+            {/* WhatsApp Quick Trigger if available */}
+            {currentLead.Telefono && (
+              <div className="p-3.5 rounded-2xl bg-[#25D36610] border border-[#25D36630] flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#25D366] flex items-center gap-1">
-                    <MessageCircle size={12} /> Mensaje Sugerido para WhatsApp
+                  <span className="text-xs font-bold text-[#22C55E] flex items-center gap-1">
+                    <MessageCircle size={14} /> WhatsApp Disponible
                   </span>
-                  <button
-                    onClick={() => openWhatsApp(quickReply)}
-                    className="text-[10px] font-bold text-[#25D366] hover:underline flex items-center gap-0.5 cursor-pointer bg-none border-none">
-                    <span>Enviar</span>
-                    <ArrowUpRight size={11} />
-                  </button>
+                  <span className="text-[11px] font-mono text-white font-bold">{currentLead.Telefono}</span>
                 </div>
-                <p className="text-xs text-[#E8EAED] italic bg-[#0A0C12] p-2.5 rounded-lg border border-[#1F2337] leading-relaxed">
-                  "{quickReply}"
-                </p>
                 <button
-                  onClick={() => openWhatsApp(quickReply)}
-                  className="btn-primary text-xs py-2 justify-center flex items-center gap-1.5 font-bold cursor-pointer bg-[#25D366] text-black hover:bg-[#20bd5a]">
+                  type="button"
+                  onClick={() => openWhatsApp()}
+                  className="w-full py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-black font-black text-xs transition-all flex items-center justify-center gap-2 shadow-md">
                   <MessageCircle size={14} />
-                  <span>Enviar Respuesta Sugerida por WhatsApp</span>
+                  <span>Abrir Conversación en WhatsApp</span>
                 </button>
               </div>
             )}
           </div>
         )}
 
-        {/* TAB 2: CONVERSACIÓN / HISTORIAL EN TIEMPO REAL */}
-        {activeTab === 'CHAT' && (
-          <div className="flex flex-col h-full flex-1 gap-3 animate-in">
-            {/* Interaction List */}
-            <div className="flex-1 overflow-y-auto flex flex-col gap-2.5 max-h-[380px] pr-1">
-              {loadingChat ? (
-                <div className="py-8 text-center text-xs text-[#8B8FA8] flex items-center justify-center gap-2">
-                  <RefreshCw size={14} className="animate-spin" />
-                  <span>Cargando mensajes...</span>
-                </div>
-              ) : interactions.length === 0 ? (
-                <div className="p-6 text-center text-xs text-[#555870] border border-dashed border-[#1F2337] rounded-xl flex flex-col items-center gap-2">
-                  <MessageSquare size={20} className="text-[#3A3F55]" />
-                  <span>No hay mensajes registrados aún para este lead.</span>
-                </div>
-              ) : (
-                interactions.map(it => {
-                  const isClient = it.Remitente === 'CLIENTE'
-                  return (
-                    <div
-                      key={it.ID}
-                      className={`flex flex-col max-w-[85%] p-2.5 rounded-xl text-xs ${
-                        isClient
-                          ? 'self-start bg-[#1A1E2C] border border-[#2A3148] text-[#E8EAED]'
-                          : 'self-end bg-[#25D36620] border border-[#25D36640] text-white'
-                      }`}>
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-[#8B8FA8]">
-                          {isClient ? currentLead.Nombre_Cliente : (it.Remitente === 'BOT' ? '🤖 Bot AutoApp' : 'Asesor')}
-                        </span>
-                        <span className="text-[9px] text-[#555870]">
-                          {it.created_at ? new Date(it.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </span>
-                      </div>
-                      <p className="leading-relaxed whitespace-pre-wrap">{it.Detalle_Conversacion}</p>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-
-            {/* Send New Message Box */}
-            <form onSubmit={handleSendInteraction} className="mt-auto flex items-center gap-2 pt-2 border-t border-[#1F2337]">
-              <input
-                type="text"
-                className="input text-xs flex-1 py-2 font-medium"
-                placeholder="Registrar nota o mensaje enviado..."
-                value={newMsgText}
-                onChange={e => setNewMsgText(e.target.value)}
-              />
-              <button
-                type="submit"
-                disabled={sendingMsg || !newMsgText.trim()}
-                className="btn-primary text-xs py-2 px-3 font-bold flex items-center justify-center gap-1 cursor-pointer">
-                <Send size={13} />
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* TAB 3: FICHA TÉCNICA DEL PROSPECTO */}
+        {/* TAB 3: FICHA DEL LEAD */}
         {activeTab === 'INFO' && (
-          <div className="flex flex-col gap-4 animate-in">
-            {/* Auto de Interés */}
+          <div className="flex flex-col gap-3 animate-in">
             {currentLead.Auto_Interes && (
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#131620] border border-[#1F2337]">
-                <Car size={15} className="text-[#FACC15] mt-0.5 flex-shrink-0" />
+              <div className="p-3 rounded-xl bg-[#121622] border border-[#1F2337] flex items-center gap-2.5">
+                <Car size={16} className="text-[#38BDF8]" />
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#555870] mb-0.5">Auto de interés</p>
-                  <p className="text-sm font-semibold text-[#E8EAED]">{currentLead.Auto_Interes}</p>
+                  <span className="text-[10px] text-[#8B8FA8] uppercase font-bold block">Vehículo de Interés</span>
+                  <span className="text-xs font-bold text-white">{currentLead.Auto_Interes}</span>
                 </div>
               </div>
             )}
 
-            {/* Presupuesto */}
             {currentLead.Presupuesto && (
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#131620] border border-[#1F2337]">
-                <DollarSign size={15} className="text-[#60A5FA] mt-0.5 flex-shrink-0" />
+              <div className="p-3 rounded-xl bg-[#121622] border border-[#1F2337] flex items-center gap-2.5">
+                <DollarSign size={16} className="text-[#FACC15]" />
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#555870] mb-0.5">Presupuesto Estimado</p>
-                  <p className="text-sm font-bold text-[#60A5FA]">{currentLead.Moneda || 'ARS'} {currentLead.Presupuesto}</p>
+                  <span className="text-[10px] text-[#8B8FA8] uppercase font-bold block">Presupuesto Estimado</span>
+                  <span className="text-xs font-bold text-white">{currentLead.Presupuesto}</span>
                 </div>
               </div>
             )}
 
-            {/* Notas del Vendedor */}
-            {currentLead.Notas && (
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#131620] border border-[#1F2337]">
-                <FileText size={15} className="text-[#FDE047] mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#555870] mb-0.5">Notas del Asesor</p>
-                  <p className="text-xs text-[#C5C9D6] leading-relaxed">{currentLead.Notas}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Fecha de Creación */}
-            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-[#131620] border border-[#1F2337]">
-              <User size={15} className="text-[#F59E0B] flex-shrink-0" />
+            <div className="p-3 rounded-xl bg-[#121622] border border-[#1F2337] flex items-center gap-2.5">
+              <User size={16} className="text-[#A78BFA]" />
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#555870] mb-0.5">Ingresó al sistema</p>
-                <p className="text-xs text-[#E8EAED]">{timeAgo(currentLead.created_at)}</p>
+                <span className="text-[10px] text-[#8B8FA8] uppercase font-bold block">Ingreso al CRM</span>
+                <span className="text-xs font-bold text-white">{timeAgo(currentLead.created_at)}</span>
               </div>
             </div>
 
-            {/* Selector de Etapa */}
-            <div className="flex flex-col gap-2 pt-2 border-t border-[#1F2337]">
-              <p className="text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">Mover Etapa en Kanban</p>
-              <div className="flex flex-col gap-1.5">
-                {STAGES.map(stage => {
-                  const cfg = stageConfig[stage]
-                  const isSelected = currentStage === stage
-                  return (
-                    <button
-                      key={stage}
-                      onClick={() => onStageChange(currentLead.ID, stage)}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all text-left cursor-pointer"
-                      style={{
-                        background: isSelected ? `${cfg.color}20` : '#131620',
-                        color: isSelected ? cfg.color : '#8B8FA8',
-                        border: `1px solid ${isSelected ? `${cfg.color}50` : '#1F2337'}`,
-                        fontWeight: isSelected ? 700 : 400,
-                      }}>
-                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cfg.color }} />
-                      <span>{cfg.label}</span>
-                      {isSelected && <span className="ml-auto text-[10px] font-bold">● Etapa Actual</span>}
-                    </button>
-                  )
-                })}
+            {currentLead.Notas && (
+              <div className="p-3 rounded-xl bg-[#121622] border border-[#1F2337] flex flex-col gap-1">
+                <span className="text-[10px] text-[#8B8FA8] uppercase font-bold">Detalle y Metadatos</span>
+                <p className="text-xs text-[#94A3B8] font-mono leading-relaxed whitespace-pre-wrap">
+                  {currentLead.Notas}
+                </p>
               </div>
-            </div>
+            )}
           </div>
         )}
-
       </div>
 
-      {/* Quick Action Footer */}
-      <div className="p-3 bg-[#11131C] border-t border-[#1F2337] flex gap-2">
-        <button
-          onClick={() => openWhatsApp()}
-          className="btn-primary flex-1 justify-center text-xs py-2 font-bold flex items-center gap-1.5 cursor-pointer bg-[#25D366] text-black hover:bg-[#20bd5a]"
-          disabled={!currentLead.Telefono}>
-          <MessageCircle size={14} />
-          <span>Abrir WhatsApp</span>
-        </button>
-        {currentLead.Telefono && (
+      {/* Quick Footer if phone exists */}
+      {currentLead.Telefono && (
+        <div className="p-3 bg-[#0A0C13] border-t border-[#1F2337] flex items-center gap-2">
+          <button
+            onClick={() => openWhatsApp()}
+            className="flex-1 py-2 px-3 rounded-xl bg-[#25D36620] hover:bg-[#25D36630] border border-[#25D36640] text-xs font-bold text-[#22C55E] flex items-center justify-center gap-1.5 transition-all">
+            <MessageCircle size={14} />
+            <span>WhatsApp</span>
+          </button>
           <a
             href={`tel:${currentLead.Telefono}`}
-            className="btn-ghost flex-1 justify-center text-xs py-2 font-bold flex items-center gap-1.5 cursor-pointer">
+            className="flex-1 py-2 px-3 rounded-xl bg-[#1A1E2E] hover:bg-[#252B42] border border-[#1F2337] text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-all">
             <Phone size={14} />
             <span>Llamar</span>
           </a>
-        )}
-      </div>
-
+        </div>
+      )}
     </div>
   )
 }

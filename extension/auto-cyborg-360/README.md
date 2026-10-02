@@ -1,4 +1,4 @@
-﻿# 🧩 Auto-Cyborg 360 Chrome Extension (v1.0.0)
+# 🧩 Auto-Cyborg 360 Chrome Extension (v1.0.0)
 
 Companion browser automation extension for automotive sales advisors and social media managers. Enables single-click DOM autocompletion across Facebook Marketplace, Instagram, and WhatsApp Web directly from AutoApp inventory.
 
@@ -27,4 +27,9 @@ Companion browser automation extension for automotive sales advisors and social 
 2. On any vehicle card, click the **"Publish"** action button (megaphone icon).
 3. Select **Facebook Marketplace**, **Instagram Feed**, or **WhatsApp Status**.
 4. AutoApp automatically launches the target portal injecting vehicle metadata via hash bridge (`#autoapp=...`, `#autoapp_ig=...`, `#autoapp_wa=...`).
-5. Auto-Cyborg 360 detects the payload, copies the formatted copy and photos to your clipboard, and displays an assisted completion overlay.
+5. **WhatsApp Status Semi-Automation**:
+   - AutoApp downloads the vehicle photo and copies the formatted AI copy to your clipboard.
+   - WhatsApp Web opens with the **Auto-Cyborg 360 HUD** on screen.
+   - The extension auto-opens the "Estados" tab in WhatsApp Web.
+   - Use the HUD buttons to paste copy into the status caption, download photo, or copy text with 1 click.
+6. Auto-Cyborg 360 detects the payload, copies the formatted copy and photos to your clipboard, and displays an assisted completion overlay.

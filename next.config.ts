@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '**.mlstatic.com' },
     ],
   },
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'recharts'],
+  },
 };
 
 export default nextConfig;

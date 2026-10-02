@@ -101,7 +101,11 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
     : parseFloat(vehicle.Precio_Venta || '0') || 0
 
   const formattedPrice = numericPrice > 0 ? `$${numericPrice.toLocaleString('es-AR')}` : '$0'
-  const formattedEntrega = vehicle.Precio_entrega ? `$${Number(vehicle.Precio_entrega).toLocaleString('es-AR')}` : undefined
+  const formattedEntrega = vehicle.Precio_entrega
+    ? (typeof vehicle.Precio_entrega === 'string' && vehicle.Precio_entrega.trim() !== ''
+        ? (vehicle.Precio_entrega.trim().startsWith('$') ? vehicle.Precio_entrega.trim() : `$${vehicle.Precio_entrega.trim()}`)
+        : `$${Number(vehicle.Precio_entrega).toLocaleString('es-AR')}`)
+    : undefined
 
   // Generate high-retention description template for Facebook Marketplace & Extensions (Optimizado para Dwell Time y "Ver más")
   let originalDesc = (vehicle.Descripcion || '').trim()
@@ -109,8 +113,10 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
     originalDesc = ''
   }
   
-  const entrega50 = (vehicle.Precio_entrega && Number(vehicle.Precio_entrega) > 0)
-    ? `$${Number(vehicle.Precio_entrega).toLocaleString('es-AR')}`
+  const entrega50 = vehicle.Precio_entrega
+    ? (typeof vehicle.Precio_entrega === 'string' && vehicle.Precio_entrega.trim() !== ''
+        ? (vehicle.Precio_entrega.trim().startsWith('$') ? vehicle.Precio_entrega.trim() : `$${vehicle.Precio_entrega.trim()}`)
+        : (Number(vehicle.Precio_entrega) > 0 ? `$${Number(vehicle.Precio_entrega).toLocaleString('es-AR')}` : 'Consultar'))
     : (numericPrice > 0 ? `$${(numericPrice * 0.5).toLocaleString('es-AR')}` : 'Consultar')
 
   const kmsText = vehicle.Km != null ? `${Number(vehicle.Km).toLocaleString('es-AR')} km` : '0 km'
@@ -118,10 +124,7 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
   const fullVehicleTitle = options?.customTitle || `${marcaFormatted} ${modeloFormatted}`.replace(/\s+/g, ' ').trim()
 
   const templateParts: string[] = [
-    `🔥 ${fullVehicleTitle} (${anioRaw || 'Unidad Seleccionada'}) — ¡Listo para transferir!`,
-    `👉 (Tocá en "Ver más" para conocer equipamiento, facilidades y financiación 👇)`,
-    ``,
-    `📍 Año: ${anioRaw || 'N/A'} | Kilometraje: ${kmsText}`,
+    `🔥 ${fullVehicleTitle} (${anioRaw || 'Unidad Seleccionada'}) — ¡Listo para transferir! 📍 Año: ${anioRaw || 'N/A'} | Kilometraje: ${kmsText}`,
   ]
 
   if (formattedPrice !== '$0') {
@@ -132,23 +135,13 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
     templateParts.push(`💵 Anticipo mínimo / Financiación desde: ${entrega50}`)
   }
 
-  if (vehicle.Tipo_Combustible || vehicle.Transmision) {
-    templateParts.push(`⛽ Combustible: ${vehicle.Tipo_Combustible || 'Nafta'} | Caja: ${vehicle.Transmision || 'Manual'}`)
-  }
-
   templateParts.push(
-    `📋 Documentación 100% al día, grabado de autopartes y verificación policial lista.`,
-    `🚗 Tomamos tu auto usado en parte de pago al mejor valor de plaza.`,
-    `📍 Consultanos por mensaje privado para coordinar tu visita o prueba de manejo.`
+    `📋 Documentación 100% al día  🚗 Tomamos tu auto usado en parte de pago al mejor valor 📍 Consultanos por mensaje privado`
   )
 
   if (originalDesc) {
     templateParts.push(`\n📝 Detalles adicionales:\n${originalDesc}`)
   }
-
-  templateParts.push(
-    `\n💬 ¿Qué te parece este modelo? ¿Preferís caja manual o automática en ciudad? ¡Dejanos tu comentario abajo! 👇`
-  )
 
   const formattedDescripcion = options?.customCopy || templateParts.join('\n')
 
@@ -176,7 +169,7 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
 }
 
 // Helper to send storage payload via all available browser extension channels
-async function setExtensionStorage(data: Record<string, any>): Promise<boolean> {
+export async function setExtensionStorage(data: Record<string, any>): Promise<boolean> {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
     try {
       await chrome.storage.local.set(data)
@@ -427,89 +420,365 @@ export async function downloadFileFromUrl(url: string, filename: string): Promis
   }
 }
 
+// Detectar si el usuario está accediendo desde un teléfono celular o tablet
+export function isMobileDevice(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || navigator.vendor || (window as any).opera || ''
+  const isTouchMobile = /android|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile/i.test(ua)
+  const isIPad = navigator.maxTouchPoints > 1 && /macintosh/i.test(ua)
+  return isTouchMobile || isIPad
+}
+
 // 🚀 Trigger WhatsApp Publication
+// En Celular: Dispara nativamente WhatsApp con la foto y el texto listos para elegir "Mi Estado" en 1 toque.
+// En PC: Abre WhatsApp Web con la extensión Auto-Cyborg para inyectar la foto y el texto 100% automático.
 export async function publishToWhatsAppStatus(
   vehicleData: any,
   onStatus?: (msg: string) => void,
   options?: { customStatusText?: string }
 ) {
-  onStatus?.('Procesando datos e imagen de portada para WhatsApp...')
+  const isMobile = isMobileDevice()
+
+  // 1. MODO CELULAR / TABLET: Compartir de forma nativa directa en WhatsApp
+  if (isMobile && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    onStatus?.('Abriendo WhatsApp en tu celular...')
+    const shared = await shareToWhatsAppMobile(vehicleData, options)
+    if (shared) {
+      onStatus?.('¡Publicado exitosamente en WhatsApp!')
+      return
+    }
+  }
+
+  // 2. MODO COMPUTADORA / ESCRITORIO: Publicación 100% automática vía WhatsApp Web + Extensión Auto-Cyborg
+  onStatus?.('Conectando con WhatsApp Web y Extensión Auto-Cyborg...')
   const car = formatVehicleForExtension(vehicleData)
   const coverUrl = car.photoLinks[0] || car.imagenPath
 
-  let imageCopied = false
-  let coverBase64: string | null = null
-
-  if (coverUrl) {
-    onStatus?.('Preparando foto de portada para WhatsApp...')
-    coverBase64 = await downloadImageAsBase64(coverUrl)
-    // Write cover photo to clipboard as PNG Blob so extension or user paste can access it directly
-    imageCopied = await copyImageToClipboard(coverUrl)
-  }
-
   const fullTitle = `${car.marca} ${car.modelo} ${car.anio}`.trim()
+  const cleanFileName = `AutoApp_${car.marca}_${car.modelo}_${car.anio}`.replace(/[^a-zA-Z0-9_-]/g, '_') + '.jpg'
+
+  const kmFormatted = Number(String(car.kms).replace(/\D/g, '') || 0).toLocaleString('es-AR')
   const defaultWAStatus = [
-    `🔥 *NUEVO INGRESO:* ${fullTitle}`,
-    `📍 *Kilometraje:* ${car.kms}`,
-    `💰 *Precio de Contado:* ${car.precio}`,
-    car.precioEntrega ? `💵 *Anticipo mínimo / Cuotas:* ${car.precioEntrega}` : '',
-    `⚙️ *Caja:* ${car.transmision} | *Combustible:* ${car.Tipo_Combustible}`,
-    `\n✅ Tomamos tu auto usado llave por llave.`,
-    `📲 _¡Respondé a este estado para consultar o coordinar visita!_`
-  ].filter(Boolean).join('\n')
+    `*${fullTitle}*`,
+    `Km: ${kmFormatted}`,
+    `Precio: ${car.precio}`,
+    car.precioEntrega ? `Anticipo: ${car.precioEntrega}` : '',
+    car.transmision || '',
+    car.Tipo_Combustible || ''
+  ].filter(Boolean).join(' | ')
 
   const statusText = options?.customStatusText || defaultWAStatus
 
-  // Copy vehicle summary text to clipboard
+  // A. Copiar texto al portapapeles preventivamente
   if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
     try {
       await navigator.clipboard.writeText(statusText)
     } catch (e) {}
   }
 
-  const payload = {
-    ...car,
-    coverImageBase64: coverBase64,
-    images: coverBase64 ? [coverBase64] : [],
-    caption: statusText,
-    task_status: 'ready_for_whatsapp'
+  // B. Obtener imagen en Base64 para que la extensión la tenga directamente en memoria
+  let coverBase64 = ''
+  if (coverUrl) {
+    onStatus?.('Preparando imagen del vehículo...')
+    if (coverUrl.startsWith('data:image')) {
+      coverBase64 = coverUrl
+    } else {
+      // 1. Descargar rápidamente vía proxy de imágenes (sin bloqueos de CORS y en formato base64 listo)
+      try {
+        coverBase64 = (await downloadImageAsBase64(coverUrl)) || ''
+      } catch (e) {}
+
+      // 2. Fallback: Cargar en cliente mediante elemento Image + Canvas si el proxy no estuviese disponible
+      if (!coverBase64) {
+        try {
+          coverBase64 = await new Promise<string>((resolve) => {
+            const img = new Image()
+            img.crossOrigin = 'anonymous'
+            img.onload = () => {
+              try {
+                const canvas = document.createElement('canvas')
+                canvas.width = img.naturalWidth || img.width || 800
+                canvas.height = img.naturalHeight || img.height || 600
+                const ctx = canvas.getContext('2d')
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0)
+                  resolve(canvas.toDataURL('image/jpeg', 0.85))
+                  return
+                }
+              } catch (err) {}
+              resolve('')
+            }
+            img.onerror = () => resolve('')
+            img.src = coverUrl
+          })
+        } catch (e) {}
+      }
+    }
   }
 
-  onStatus?.('Enviando vehículo a la extensión Auto-Cyborg...')
+  // Copiar preventivamente imagen al portapapeles (permite pegar con Ctrl+V de forma inmediata en cualquier chat o Estado)
+  if (coverBase64 && typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
+    try {
+      const parts = coverBase64.split(',')
+      const b64 = parts[1] || parts[0]
+      const bin = atob(b64)
+      const u8 = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i)
+      const blob = new Blob([u8], { type: 'image/jpeg' })
 
-  window.postMessage({
-    type: 'AUTOAPP_PUBLISH_TASK',
-    target: 'WHATSAPP_STATUS',
-    payload: payload
-  }, '*')
+      const img = new Image()
+      img.src = URL.createObjectURL(blob)
+      await new Promise(r => img.onload = r)
+      const c = document.createElement('canvas')
+      c.width = img.width
+      c.height = img.height
+      const ctx = c.getContext('2d')
+      ctx?.drawImage(img, 0, 0)
+      c.toBlob(async (pngBlob) => {
+        if (pngBlob && navigator.clipboard?.write) {
+          try {
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                'image/png': pngBlob,
+                'text/plain': new Blob([statusText], { type: 'text/plain' })
+              })
+            ])
+          } catch (e) {}
+        }
+      }, 'image/png')
+    } catch (e) {}
+  }
 
-  await setExtensionStorage({
-    wa_active_car: payload,
-    wa_task_status: 'ready_for_whatsapp',
-    active_car: payload
-  })
-
-  // Encode lightweight metadata payload into URL hash for extension content script on web.whatsapp.com
-  const lightweightMetaWA = {
-    id: car.id,
+  // C. Preparar el payload completo para la extensión
+  const payloadWA = {
+    id: car.id || vehicleData?.ID,
     marca: car.marca,
     modelo: car.modelo,
-    version: car.version,
     anio: car.anio,
     precio: car.precio,
     kms: car.kms,
-    descripcion: car.descripcion,
-    imagenPath: coverUrl
+    caption: statusText,
+    descripcion: statusText,
+    imagenPath: coverUrl,
+    coverImageBase64: coverBase64
   }
 
-  const encodedMetaWA = encodeURIComponent(JSON.stringify(lightweightMetaWA))
-  const targetUrl = `https://web.whatsapp.com/#autoapp_wa=${encodedMetaWA}`
+  // Guardar en storage local de extensión a través de todos los canales posibles
+  await setExtensionStorage({
+    wa_active_car: payloadWA,
+    cyborg_pending_wa_story: payloadWA,
+    task_status: 'ready_for_whatsapp'
+  })
 
-  onStatus?.('¡Publicación iniciada! Abriendo WhatsApp Web...')
+  // D. Codificar payload en el hash de WhatsApp Web (ligero para no desbordar ni truncar la URL)
+  const hashPayloadWA = {
+    id: payloadWA.id,
+    marca: payloadWA.marca,
+    modelo: payloadWA.modelo,
+    anio: payloadWA.anio,
+    precio: payloadWA.precio,
+    kms: payloadWA.kms,
+    caption: payloadWA.caption,
+    descripcion: payloadWA.descripcion,
+    imagenPath: payloadWA.imagenPath
+  }
+  const encodedPayload = encodeURIComponent(JSON.stringify(hashPayloadWA))
+  const targetUrl = `https://web.whatsapp.com/#autoapp_wa=${encodedPayload}`
+
+  onStatus?.('¡Abriendo WhatsApp Web! La extensión inyectará la foto y el texto en Estados...')
 
   setTimeout(() => {
     window.open(targetUrl, '_blank')
-  }, 500)
+  }, 400)
+}
+
+// 📲 Direct Web Share API for Mobile / Tablet to WhatsApp Status
+export async function shareToWhatsAppMobile(
+  vehicleData: any,
+  options?: { customStatusText?: string }
+): Promise<boolean> {
+  const car = formatVehicleForExtension(vehicleData)
+  const fullTitle = `${car.marca} ${car.modelo} ${car.anio}`.trim()
+  const kmFormatted = Number(String(car.kms).replace(/\D/g, '') || 0).toLocaleString('es-AR')
+  const statusText = options?.customStatusText || [
+    `*${fullTitle}*`,
+    `Km: ${kmFormatted}`,
+    `Precio: ${car.precio}`,
+    car.precioEntrega ? `Anticipo: ${car.precioEntrega}` : '',
+    car.transmision || '',
+    car.Tipo_Combustible || ''
+  ].filter(Boolean).join(' | ')
+
+  const coverUrl = car.photoLinks[0] || car.imagenPath
+
+  if (typeof navigator !== 'undefined' && navigator.share) {
+    try {
+      let file: File | undefined
+      if (coverUrl) {
+        const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(coverUrl.trim())}`
+        const res = await fetch(proxyUrl)
+        if (res.ok) {
+          const blob = await res.blob()
+          const filename = `AutoApp_${car.marca}_${car.modelo}`.replace(/[^a-zA-Z0-9_-]/g, '_') + '.jpg'
+          file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
+        }
+      }
+
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: fullTitle,
+          text: statusText,
+          files: [file]
+        })
+        return true
+      } else {
+        await navigator.share({
+          title: fullTitle,
+          text: statusText,
+          url: coverUrl || undefined
+        })
+        return true
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        console.warn('[AutoApp] navigator.share error:', e)
+      }
+    }
+  }
+  return false
+}
+
+// 📲 Enviar auto a un chat de WhatsApp (Opción 1 en Celular / Opción 3 en PC con Auto-Cyborg)
+export async function sendVehicleToWhatsAppChat(
+  vehicleData: any,
+  onStatus?: (msg: string) => void,
+  options?: { customText?: string }
+): Promise<boolean> {
+  const isMobile = isMobileDevice()
+  const car = formatVehicleForExtension(vehicleData)
+  const fullTitle = `${car.marca} ${car.modelo} ${car.anio}`.trim()
+  const kmFormatted = Number(String(car.kms).replace(/\D/g, '') || 0).toLocaleString('es-AR')
+  const coverUrl = car.photoLinks[0] || car.imagenPath
+
+  const defaultChatText = options?.customText || [
+    `*${fullTitle}*`,
+    `Km: ${kmFormatted}`,
+    `Precio: ${car.precio}`,
+    car.precioEntrega ? `Anticipo: ${car.precioEntrega}` : '',
+    car.transmision || '',
+    car.Tipo_Combustible || ''
+  ].filter(Boolean).join(' | ')
+
+  // 1. OPCIÓN 1 (CELULAR / TABLET): Web Share API nativo con foto y texto en 1 sola acción
+  if (isMobile && typeof navigator !== 'undefined' && navigator.share) {
+    onStatus?.('Abriendo WhatsApp en tu celular...')
+    try {
+      let file: File | undefined
+      if (coverUrl) {
+        const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(coverUrl.trim())}`
+        const res = await fetch(proxyUrl)
+        if (res.ok) {
+          const blob = await res.blob()
+          const filename = `Auto_${car.marca}_${car.modelo}`.replace(/[^a-zA-Z0-9_-]/g, '_') + '.jpg'
+          file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
+        }
+      }
+
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: fullTitle,
+          text: defaultChatText,
+          files: [file]
+        })
+        onStatus?.('¡Compartido con éxito!')
+        return true
+      } else {
+        await navigator.share({
+          title: fullTitle,
+          text: defaultChatText,
+          url: coverUrl || undefined
+        })
+        onStatus?.('¡Compartido con éxito!')
+        return true
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError') return false
+      console.warn('[AutoApp] sendVehicleToWhatsAppChat share error:', e)
+    }
+  }
+
+  // 2. OPCIÓN 3 (PC / ESCRITORIO): Auto-Cyborg inyecta foto y texto directamente en el chat abierto de WhatsApp Web
+  onStatus?.('Conectando con WhatsApp Web y Extensión Auto-Cyborg...')
+
+  // Copiar preventivamente imagen y texto al portapapeles
+  if (coverUrl) {
+    try {
+      await copyImageToClipboard(coverUrl)
+    } catch (e) {}
+  }
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(defaultChatText)
+    } catch (e) {}
+  }
+
+  // Preparar imagen en base64
+  let coverBase64 = ''
+  if (coverUrl) {
+    try {
+      const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(coverUrl.trim())}`
+      const imgRes = await fetch(proxyUrl)
+      if (imgRes.ok) {
+        const imgBlob = await imgRes.blob()
+        coverBase64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve((reader.result as string) || '')
+          reader.onerror = () => resolve('')
+          reader.readAsDataURL(imgBlob)
+        })
+      }
+    } catch (e) {}
+  }
+
+  const payloadChat = {
+    id: car.id || vehicleData?.ID,
+    marca: car.marca,
+    modelo: car.modelo,
+    anio: car.anio,
+    precio: car.precio,
+    kms: car.kms,
+    text: defaultChatText,
+    caption: defaultChatText,
+    imageUrl: coverUrl,
+    images: coverBase64 ? [coverBase64] : [],
+    coverImageBase64: coverBase64
+  }
+
+  // Notificar al puente de la extensión
+  try {
+    window.postMessage({
+      type: 'AUTOAPP_PUBLISH_TASK',
+      target: 'WHATSAPP_CHAT',
+      payload: payloadChat
+    }, '*')
+  } catch (e) {}
+
+  // Abrir / enfocar WhatsApp Web con el hash
+  const hashPayload = encodeURIComponent(JSON.stringify({
+    id: payloadChat.id,
+    marca: payloadChat.marca,
+    modelo: payloadChat.modelo,
+    anio: payloadChat.anio,
+    precio: payloadChat.precio,
+    kms: payloadChat.kms,
+    text: payloadChat.text,
+    imageUrl: payloadChat.imageUrl
+  }))
+
+  const targetUrl = `https://web.whatsapp.com/#autoapp_wa_chat=${hashPayload}`
+  window.open(targetUrl, '_blank')
+  onStatus?.('¡Inyectando en chat de WhatsApp Web!')
+  return true
 }
 
 // 🚀 MercadoLibre VIS API Payload Format
@@ -632,3 +901,325 @@ export async function publishToMercadoLibre(
     id: result.id
   }
 }
+
+// 🚀 Trigger Facebook Fan Page Direct Graph API Publication
+export async function publishToFacebookPage(
+  vehicleData: any,
+  onStatus?: (msg: string) => void,
+  options?: { customCopy?: string; customTitle?: string }
+): Promise<{ success: boolean; url: string; id: string; message: string; isSimulated?: boolean }> {
+  onStatus?.('Formateando vehículo y fotos según secuencia estratégica de swipe...')
+
+  const baseUrl = typeof window !== 'undefined' 
+    ? '' 
+    : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
+
+  onStatus?.('Enviando publicación a Facebook Page Graph API...')
+
+  const res = await fetch(`${baseUrl}/api/facebook/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      vehicle: vehicleData,
+      customCopy: options?.customCopy,
+      customTitle: options?.customTitle
+    })
+  })
+
+  const result = await res.json()
+
+  if (!res.ok || !result.success) {
+    throw new Error(result.error || 'Error al comunicarse con la API de Facebook Page')
+  }
+
+  onStatus?.(`¡Publicado exitosamente en Facebook Fan Page!`)
+
+  return {
+    success: true,
+    url: result.permalink,
+    id: result.id,
+    message: result.message,
+    isSimulated: result.isSimulated
+  }
+}
+
+// 🗑️ Delete publication directly from Facebook Fan Page
+export async function deleteFacebookPost(postId: string): Promise<boolean> {
+  const baseUrl = typeof window !== 'undefined' ? '' : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
+  const res = await fetch(`${baseUrl}/api/facebook/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ postId })
+  })
+  const data = await res.json()
+  return data.success === true
+}
+
+// 📸 Trigger Instagram Feed Direct Graph API Publication (Carousel / Photo)
+export async function publishToInstagramGraphAPI(
+  vehicleData: any,
+  onStatus?: (msg: string) => void,
+  options?: { customCopy?: string; customTitle?: string }
+): Promise<{ success: boolean; url: string; id: string; message: string }> {
+  onStatus?.('Procesando imágenes para contenedor de Instagram...')
+
+  const baseUrl = typeof window !== 'undefined' 
+    ? '' 
+    : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
+
+  onStatus?.('Creando álbum carrusel en Instagram Graph API...')
+
+  const res = await fetch(`${baseUrl}/api/instagram/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      vehicle: vehicleData,
+      customCopy: options?.customCopy,
+      customTitle: options?.customTitle
+    })
+  })
+
+  const result = await res.json()
+
+  if (!res.ok || !result.success) {
+    throw new Error(result.error || 'Error al comunicarse con la API de Instagram')
+  }
+
+  onStatus?.(`¡Publicado exitosamente en Instagram!`)
+
+  return {
+    success: true,
+    url: result.permalink,
+    id: result.id,
+    message: result.message
+  }
+}
+
+// 🗑️ Delete publication directly from Instagram
+export async function deleteInstagramPost(mediaId: string): Promise<boolean> {
+  const baseUrl = typeof window !== 'undefined' ? '' : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
+  const res = await fetch(`${baseUrl}/api/instagram/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mediaId })
+  })
+  const data = await res.json()
+  return data.success === true
+}
+
+// ⚡ Publicar Historia en Instagram Oficial (Graph API)
+export async function publishToInstagramStory(
+  vehicleData: any,
+  onStatus?: (msg: string) => void,
+  options?: { imageUrl?: string; videoUrl?: string }
+): Promise<{ success: boolean; id?: string; message?: string }> {
+  onStatus?.('Publicando Historia en Instagram Oficial (@okmmotors)...')
+  const baseUrl = typeof window !== 'undefined' ? '' : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
+  const imageUrl = options?.imageUrl || vehicleData.FOTO_PORTADA || (vehicleData.photoLinks && vehicleData.photoLinks[0])
+  const vehicleTitle = `${vehicleData.Marca || vehicleData.marca || ''} ${vehicleData.Modelo || vehicleData.modelo || ''}`.trim() || 'Vehículo'
+
+  const res = await fetch(`${baseUrl}/api/instagram/stories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      imageUrl,
+      videoUrl: options?.videoUrl,
+      vehicleTitle,
+      vehicleId: vehicleData.ID || vehicleData.id
+    })
+  })
+  const data = await res.json()
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Error al publicar Historia en Instagram')
+  }
+  onStatus?.('¡Historia publicada exitosamente en Instagram!')
+  return data
+}
+
+// 🎵 Generar pie de publicación con hashtags para TikTok
+export function generateTikTokCaption(vehicleData: any): string {
+  const car = formatVehicleForExtension(vehicleData)
+  const fullTitle = `${car.marca} ${car.modelo} ${car.anio}`.trim()
+  const kmFormatted = Number(String(car.kms).replace(/\D/g, '') || 0).toLocaleString('es-AR')
+  
+  const cleanMarca = car.marca.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+  const cleanModelo = car.modelo.split(' ')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+
+  const lines = [
+    `🚗 ${fullTitle}`,
+    `📍 OKM Motors - Usados Seleccionados & 0km`,
+    `⚡ ${kmFormatted} km | ${car.precio}`,
+    car.precioEntrega ? `💰 Anticipo desde ${car.precioEntrega}` : '',
+    car.transmision ? `⚙️ Transmisión: ${car.transmision}` : '',
+    car.Tipo_Combustible ? `⛽ Combustible: ${car.Tipo_Combustible}` : '',
+    '',
+    `📲 Escribinos al WhatsApp del perfil para coordinar tu test drive o reservar la unidad.`,
+    `Tomamos tu usado en parte de pago y financiamos en cuotas fijas.`,
+    '',
+    `#autos #autosargentina #concesionaria #vendo #${cleanMarca} #${cleanModelo} #usadosseleccionados #parati #fyp #viral`
+  ].filter(line => line !== undefined && line !== null)
+
+  return lines.join('\n')
+}
+
+// 📱 Compartir a TikTok en Celular (Photo Mode / Carrusel de fotos)
+export async function shareToTikTokMobile(
+  vehicleData: any,
+  options?: { customText?: string }
+): Promise<boolean> {
+  const car = formatVehicleForExtension(vehicleData)
+  const fullTitle = `${car.marca} ${car.modelo} ${car.anio}`.trim()
+  const caption = options?.customText || generateTikTokCaption(vehicleData)
+  const allPhotos = car.photoLinks && car.photoLinks.length > 0 ? car.photoLinks : (car.imagenPath ? [car.imagenPath] : [])
+
+  // 1. Copiar texto con hashtags al portapapeles preventivamente
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(caption)
+    } catch (e) {}
+  }
+
+  // 2. Preparar fotos para Web Share (hasta 8 fotos para el Photo Mode de TikTok)
+  if (typeof navigator !== 'undefined' && navigator.share) {
+    try {
+      const files: File[] = []
+      const photosToShare = allPhotos.slice(0, 8)
+      
+      for (let i = 0; i < photosToShare.length; i++) {
+        const photoUrl = photosToShare[i]
+        try {
+          const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(photoUrl.trim())}`
+          const res = await fetch(proxyUrl)
+          if (res.ok) {
+            const blob = await res.blob()
+            const filename = `TikTok_${car.marca}_${car.modelo}_${i + 1}.jpg`.replace(/[^a-zA-Z0-9_.-]/g, '_')
+            files.push(new File([blob], filename, { type: blob.type || 'image/jpeg' }))
+          }
+        } catch (fetchErr) {
+          console.warn(`[TikTok] Error fetching photo ${i}:`, fetchErr)
+        }
+      }
+
+      if (files.length > 0 && navigator.canShare && navigator.canShare({ files })) {
+        await navigator.share({
+          title: fullTitle,
+          text: caption,
+          files: files
+        })
+        return true
+      } else {
+        await navigator.share({
+          title: fullTitle,
+          text: caption,
+          url: allPhotos[0] || undefined
+        })
+        return true
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        console.warn('[AutoApp] shareToTikTokMobile error:', e)
+      }
+    }
+  }
+  return false
+}
+
+// 🚀 Publicar vehículo en TikTok (Fotos + Info)
+// En Celular: Dispara nativamente la hoja de compartir con fotos para abrir TikTok en Photo Mode y elegir música.
+// En PC: Abre TikTok Creator Center con la extensión Auto-Cyborg para inyectar fotos y descripción.
+export async function publishToTikTok(
+  vehicleData: any,
+  onStatus?: (msg: string) => void,
+  options?: { customText?: string }
+): Promise<{ success: boolean; url: string }> {
+  const isMobile = isMobileDevice()
+
+  // 1. MODO CELULAR / TABLET: Web Share nativo directo a la App de TikTok
+  if (isMobile) {
+    onStatus?.('Preparando fotos y ficha para TikTok...')
+    const shared = await shareToTikTokMobile(vehicleData, options)
+    if (shared) {
+      onStatus?.('¡Compartido exitosamente en TikTok!')
+      return { success: true, url: 'https://www.tiktok.com/' }
+    }
+  }
+
+  // 2. MODO COMPUTADORA / ESCRITORIO: Extensión Auto-Cyborg + TikTok Studio
+  onStatus?.('Preparando fotos y ficha para TikTok Studio...')
+  const car = formatVehicleForExtension(vehicleData)
+  const caption = options?.customText || generateTikTokCaption(vehicleData)
+  const allPhotos = car.photoLinks && car.photoLinks.length > 0 ? car.photoLinks : (car.imagenPath ? [car.imagenPath] : [])
+
+  // Copiar descripción con hashtags al portapapeles preventivamente
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(caption)
+    } catch (e) {}
+  }
+
+  // Convertir las fotos principales a Base64 en memoria (sin diálogos de descarga molestos)
+  const photosBase64: string[] = []
+  const photosToLoad = allPhotos.slice(0, 4)
+  for (let i = 0; i < photosToLoad.length; i++) {
+    onStatus?.(`Procesando foto ${i + 1} de ${photosToLoad.length}...`)
+    try {
+      const b64 = await downloadImageAsBase64(photosToLoad[i])
+      if (b64) photosBase64.push(b64)
+    } catch (err) {
+      console.warn(`[TikTok] Error convirtiendo foto ${i} a base64:`, err)
+    }
+  }
+
+  // Enviar carga completa con fotos en base64 a la extensión Auto-Cyborg (vía bridge)
+  const fullPayload = {
+    id: vehicleData.ID,
+    marca: car.marca,
+    modelo: car.modelo,
+    anio: car.anio,
+    precio: car.precio,
+    kms: car.kms,
+    caption: caption,
+    photosBase64: photosBase64,
+    photos: allPhotos.slice(0, 6),
+    coverUrl: allPhotos[0] || null,
+    isVideo: false
+  }
+
+  window.postMessage({
+    type: 'AUTOAPP_PUBLISH_TASK',
+    target: 'TIKTOK_PUBLISH',
+    payload: fullPayload,
+    data: fullPayload
+  }, '*')
+
+  await setExtensionStorage({
+    cyborg_pending_tiktok: fullPayload,
+    tiktok_active_car: fullPayload,
+    task_status: 'ready_for_tiktok'
+  })
+
+  // Hash liviano para la URL (sin base64 gigante para no saturar la barra de direcciones)
+  const urlHashMeta = {
+    id: vehicleData.ID,
+    marca: car.marca,
+    modelo: car.modelo,
+    anio: car.anio,
+    precio: car.precio,
+    kms: car.kms,
+    isVideo: false
+  }
+
+  const encodedMeta = encodeURIComponent(JSON.stringify(urlHashMeta))
+  const targetUrl = `https://www.tiktok.com/tiktokstudio/upload#autoapp_tiktok=${encodedMeta}`
+
+  setTimeout(() => {
+    window.open(targetUrl, '_blank')
+  }, 400)
+
+  onStatus?.('Abriendo TikTok Studio con Auto-Cyborg...')
+  return { success: true, url: 'https://www.tiktok.com/tiktokstudio/upload' }
+}
+
+
+
+

@@ -18,13 +18,35 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    try {
+      // 1. Iniciar sesión vía Server Endpoint (Set-Cookie HTTP seguro para red local / móviles)
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
 
-    if (error) {
-      setError('Credenciales incorrectas. Verificá tu email y contraseña.')
+      const result = await res.json()
+
+      if (!res.ok || result.error) {
+        // Fallback directo a cliente Supabase
+        const { error: clientErr } = await supabase.auth.signInWithPassword({ email, password })
+        if (clientErr) {
+          setError(result.error || clientErr.message || 'Credenciales incorrectas.')
+          setLoading(false)
+          return
+        }
+      } else {
+        // Sincronizar también sesión en cliente
+        await supabase.auth.signInWithPassword({ email, password }).catch(() => {})
+      }
+
+      // Redirigir al panel principal
+      window.location.replace('/')
+    } catch (err: any) {
+      console.error('[Login] Error:', err)
+      setError(err?.message || 'Error de conexión con el servidor.')
       setLoading(false)
-    } else {
-      window.location.href = '/'
     }
   }
 

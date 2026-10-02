@@ -24,7 +24,12 @@ const ALLOWED_DOMAIN_SUFFIXES = [
 function isHostAllowed(hostname: string): boolean {
   const host = hostname.toLowerCase()
 
-  // 1. Bloqueo estricto de loopback y nombres locales
+  // Permitir localhost y 127.0.0.1 en desarrollo para imágenes locales
+  if (process.env.NODE_ENV !== 'production' && (host === 'localhost' || host === '127.0.0.1')) {
+    return true
+  }
+
+  // 1. Bloqueo estricto de loopback y nombres locales en producción
   if (
     host === 'localhost' ||
     host === '127.0.0.1' ||
@@ -77,10 +82,10 @@ export async function GET(req: NextRequest) {
     return new NextResponse('Missing url parameter', { status: 400 })
   }
 
-  // 1. Parsing y validación de sintaxis de URL
+  // 1. Parsing y validación de sintaxis de URL (soporta rutas relativas como /templates/...)
   let parsedUrl: URL
   try {
-    parsedUrl = new URL(rawUrl.trim())
+    parsedUrl = new URL(rawUrl.trim(), req.nextUrl.origin)
   } catch {
     return new NextResponse('Invalid URL format', { status: 400 })
   }

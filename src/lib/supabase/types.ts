@@ -9,7 +9,7 @@ export interface Vehicle {
   Km?: number
   Descripcion?: string
   Precio_Venta?: number
-  Precio_entrega?: number
+  Precio_entrega?: number | string
   Precio_Compra?: number
   Precio_Info?: number
   Estado?: 'DISPONIBLE' | 'RESERVADO' | 'VENDIDO' | 'SEÑADO'
@@ -28,11 +28,18 @@ export interface Vehicle {
 
 // ─── DB_LEADS ─────────────────────────────────────────────────────────────────
 export type LeadStage =
+  | 'SIN_RESPONDER'
+  | 'VISITA'
+  | 'COTIZACION'
+  | 'FINANCIACION'
+  | 'FOTOS_INFO'
+  | 'CURIOSOS'
+  | 'CERRADO'
+  // Compatibilidad con etapas anteriores:
   | 'NUEVO'
   | 'CONTACTADO'
   | 'INTERESADO'
   | 'PROPUESTA'
-  | 'CERRADO'
   | 'PERDIDO'
 
 export type LeadTemperature = 'CALIENTE' | 'TIBIO' | 'FRIO'

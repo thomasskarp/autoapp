@@ -81,8 +81,11 @@ export function ExportExcelButton({ vehicles }: Props) {
         }
 
         let obs = (v.Descripcion || '').trim()
-        if (!obs && v.Precio_entrega && v.Precio_entrega > 0) {
-          obs = `Entrega $${new Intl.NumberFormat('es-AR').format(v.Precio_entrega)}`
+        if (!obs && v.Precio_entrega) {
+          const entregaStr = typeof v.Precio_entrega === 'string'
+            ? v.Precio_entrega
+            : (v.Precio_entrega > 0 ? `Entrega $${new Intl.NumberFormat('es-AR').format(v.Precio_entrega)}` : '')
+          if (entregaStr) obs = entregaStr
         }
 
         return [categoria, marca, segmento, modelo, version, año, kmStr, precioStr, obs]

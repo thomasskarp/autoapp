@@ -11,15 +11,29 @@ export function cn(...inputs: (string | undefined | null | false | Record<string
     .join(' ')
 }
 
+// Reusable formatters to avoid expensive new Intl instantiations on every render
+const priceFormatterARS = new Intl.NumberFormat('es-AR', {
+  style: 'currency',
+  currency: 'ARS',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+const dotsFormatter = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 })
+
+const usdFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+const kmFormatter = new Intl.NumberFormat('es-AR')
+
 // Format currency in Argentine Pesos
 export function formatPrice(value?: number | null): string {
   if (value == null) return '—'
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value)
+  return priceFormatterARS.format(value)
 }
 
 // Format raw number with thousands dots for inputs (e.g. 28000000 -> "28.000.000")
@@ -27,7 +41,7 @@ export function formatNumberDots(value?: number | string | null): string {
   if (value == null || value === '') return ''
   const num = typeof value === 'number' ? value : parseFloat(String(value).replace(/\./g, '').replace(/,/g, ''))
   if (isNaN(num)) return ''
-  return new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(num)
+  return dotsFormatter.format(num)
 }
 
 // Parse string with dots back to raw number (e.g. "28.000.000" -> 28000000)
@@ -43,18 +57,13 @@ export function parseNumberFromDots(str: string): number | '' {
 // Format USD price
 export function formatUSD(value?: number | null): string {
   if (value == null) return '—'
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value)
+  return usdFormatter.format(value)
 }
 
 // Format kilometers
 export function formatKm(value?: number | null): string {
   if (value == null) return '—'
-  return new Intl.NumberFormat('es-AR').format(value) + ' km'
+  return kmFormatter.format(value) + ' km'
 }
 
 // Relative time (hace X horas / días)
@@ -182,12 +191,20 @@ export const statusConfig: Record<string, { label: string; color: string; bg: st
 
 // Lead stage config
 export const stageConfig: Record<string, { label: string; color: string; bg: string }> = {
-  NUEVO:       { label: 'Nuevo',       color: '#FDE047', bg: 'bg-blue-500/10'    },
-  CONTACTADO:  { label: 'Contactado',  color: '#F59E0B', bg: 'bg-amber-500/10'   },
-  INTERESADO:  { label: 'Interesado',  color: '#F97316', bg: 'bg-orange-500/10'  },
-  PROPUESTA:   { label: 'Propuesta',   color: '#8B5CF6', bg: 'bg-violet-500/10'  },
-  CERRADO:     { label: 'Cerrado',     color: '#10B981', bg: 'bg-emerald-500/10' },
-  PERDIDO:     { label: 'Perdido',     color: '#EF4444', bg: 'bg-red-500/10'     },
+  SIN_RESPONDER: { label: 'Sin Responder',        color: '#FACC15', bg: 'bg-amber-500/10'   },
+  VISITA:        { label: 'Visita al Salón',      color: '#3B82F6', bg: 'bg-blue-500/10'    },
+  COTIZACION:    { label: 'Cotización / Usado',   color: '#EC4899', bg: 'bg-pink-500/10'    },
+  FINANCIACION:  { label: 'Financiación',         color: '#8B5CF6', bg: 'bg-violet-500/10'  },
+  FOTOS_INFO:    { label: 'Fotos / Info',         color: '#06B6D4', bg: 'bg-cyan-500/10'    },
+  CURIOSOS:      { label: 'Curiosos / Sin Avance',color: '#6B7280', bg: 'bg-gray-500/10'    },
+  CERRADO:       { label: 'Venta Concretada',     color: '#10B981', bg: 'bg-emerald-500/10' },
+
+  // Compatibilidad con registros existentes:
+  NUEVO:         { label: 'Sin Responder',        color: '#FACC15', bg: 'bg-amber-500/10'   },
+  CONTACTADO:    { label: 'Fotos / Info',         color: '#06B6D4', bg: 'bg-cyan-500/10'    },
+  INTERESADO:    { label: 'Cotización / Usado',   color: '#EC4899', bg: 'bg-pink-500/10'    },
+  PROPUESTA:     { label: 'Financiación',         color: '#8B5CF6', bg: 'bg-violet-500/10'  },
+  PERDIDO:       { label: 'Curiosos / Sin Avance',color: '#6B7280', bg: 'bg-gray-500/10'    },
 }
 
 // Check if a patent string is a temporary/internal bulk system code (e.g. BULK_59633_17, B19C3A01, TEMP_..., 0KM)
@@ -214,3 +231,34 @@ export function formatDisplayPatent(p?: string | null): string | null {
   if (isTempPatent(p)) return null
   return p!.trim().toUpperCase()
 }
+
+/**
+ * Función de ordenamiento 100% determinista y estable para cualquier lista de vehículos.
+ * Garantiza que cuando se edita un precio, km, info, foto o nota de un auto,
+ * el vehículo NUNCA cambie de posición en la lista ni salte de lugar.
+ */
+export function compareVehiclesStable(a: any, b: any): number {
+  // 1. Marca normalizada (A-Z)
+  const brandA = (a.Marca || '').trim().toUpperCase()
+  const brandB = (b.Marca || '').trim().toUpperCase()
+  if (brandA !== brandB) return brandA.localeCompare(brandB)
+
+  // 2. Modelo normalizado (A-Z)
+  const modelA = (a.Modelo || '').trim().toUpperCase()
+  const modelB = (b.Modelo || '').trim().toUpperCase()
+  if (modelA !== modelB) return modelA.localeCompare(modelB)
+
+  // 3. Año (más nuevos primero: 2024 antes que 2020)
+  const yearA = Number(a.Año) || 0
+  const yearB = Number(b.Año) || 0
+  if (yearA !== yearB) return yearB - yearA
+
+  // 4. Patente (A-Z)
+  const patA = (a.Patente || '').trim().toUpperCase()
+  const patB = (b.Patente || '').trim().toUpperCase()
+  if (patA !== patB) return patA.localeCompare(patB)
+
+  // 5. ID único (desempate estricto absoluto)
+  return String(a.ID).localeCompare(String(b.ID))
+}
+

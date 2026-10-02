@@ -9,13 +9,17 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useInfoPrice } from '@/context/info-price-context'
 import {
-  X, Calendar, Gauge, Fuel, Sliders,
-  Copy, Check, Image as ImageIcon, CheckCircle2, Star, Download, Loader2
+  X, Calendar, Gauge, Fuel, Sliders, Settings,
+  Copy, Check, Image as ImageIcon, CheckCircle2, Star, Download, Loader2, Trash2
 } from 'lucide-react'
+import { CircularModal } from './circular-modal'
+import { getCircularForVehicle, formatCuotasForPublication } from '@/lib/services/circular-service'
 
 interface Props {
   vehicle: Vehicle | null
   onClose: () => void
+  onDeleted?: (id: string) => void
+  onUpdateVehicle?: (id: string, fields: Partial<Vehicle>) => void
 }
 
 function isTempPatent(p?: string | null): boolean {
@@ -36,13 +40,15 @@ const COMBUSTIBLE_OPTIONS = ['Nafta', 'Diésel', 'Híbrido', 'Eléctrico', 'GNC'
 const TRANSMISION_OPTIONS = ['Manual', 'Automática']
 const CARROCERIA_OPTIONS = ['Sedán', 'Hatchback', 'SUV', 'Camioneta', 'Camión', 'Coupé', 'Utilitario']
 
-export function VehicleDetailModal({ vehicle, onClose }: Props) {
+export function VehicleDetailModal({ vehicle, onClose, onDeleted, onUpdateVehicle }: Props) {
   const [mounted, setMounted] = useState(false)
   const [photosList, setPhotosList] = useState<string[]>([])
   const [selectedPhoto, setSelectedPhoto] = useState<string>('')
   const [copied, setCopied] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [savedIndicator, setSavedIndicator] = useState(false)
+  const [showCircularModal, setShowCircularModal] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Drag and Drop state
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null)
@@ -55,7 +61,7 @@ export function VehicleDetailModal({ vehicle, onClose }: Props) {
   const [año, setAño] = useState<number | ''>('')
   const [km, setKm] = useState<number | ''>('')
   const [precioVenta, setPrecioVenta] = useState<number | ''>('')
-  const [precioEntrega, setPrecioEntrega] = useState<number | ''>('')
+  const [precioEntrega, setPrecioEntrega] = useState<number | string>('')
   const [precioInfo, setPrecioInfo] = useState<number | ''>('')
   const [combustible, setCombustible] = useState('Nafta')
   const [transmision, setTransmision] = useState('Manual')
@@ -119,19 +125,38 @@ export function VehicleDetailModal({ vehicle, onClose }: Props) {
 
   if (!vehicle || !mounted) return null
 
-  const isOkm = (vehicle.Tipo_Vehiculo || '').toLowerCase() === '0km'
+  const isOkm = Boolean(vehicle.is_okm_table || (vehicle.Tipo_Vehiculo || '').toLowerCase() === '0km' || (vehicle.Km === 0 && !vehicle.Patente))
   const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
   const showPatente = !isTempPatent(vehicle.Patente)
 
   // Automatic saving helper
   const autoSaveField = async (fieldsToUpdate: Partial<Vehicle>) => {
+    // 1. Indicador visual inmediato de guardado
+    setSavedIndicator(true)
+    setTimeout(() => setSavedIndicator(false), 2000)
+
+    // 2. Notificar al componente padre para actualización instantánea en pantalla (0ms)
+    onUpdateVehicle?.(vehicle.ID, fieldsToUpdate)
+
+    // 3. Persistir en la API y actualizar caché RAM del servidor
     try {
-      await supabase.from(tableName).update(fieldsToUpdate).eq('ID', vehicle.ID)
-      setSavedIndicator(true)
-      setTimeout(() => setSavedIndicator(false), 2000)
-      router.refresh()
+      const res = await fetch('/api/vehicles/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: vehicle.ID,
+          isOkm,
+          fields: fieldsToUpdate,
+        }),
+      })
+
+      if (!res.ok) {
+        throw new Error('Error al actualizar en el servidor')
+      }
     } catch (err) {
       console.error('Error guardando cambios automáticamente:', err)
+      // Fallback directo a Supabase en caso de error de red
+      await supabase.from(tableName).update(fieldsToUpdate).eq('ID', vehicle.ID)
     }
   }
 
@@ -197,15 +222,20 @@ export function VehicleDetailModal({ vehicle, onClose }: Props) {
 
   const handleCopyFicha = () => {
     const pVenta = typeof precioVenta === 'number' ? precioVenta : 0
-    const pEntregaCalc = (typeof precioEntrega === 'number' && precioEntrega > 0)
-      ? precioEntrega
-      : (pVenta > 0 ? pVenta * 0.5 : 0)
+    const pEntregaStr = (typeof precioEntrega === 'string' && precioEntrega.trim() !== '')
+      ? (precioEntrega.trim().startsWith('$') ? precioEntrega.trim() : `$${precioEntrega.trim()}`)
+      : (typeof precioEntrega === 'number' && precioEntrega > 0)
+        ? formatPrice(precioEntrega)
+        : (pVenta > 0 ? formatPrice(pVenta * 0.5) : 'Consultar')
+
+    const { circular } = isOkm ? getCircularForVehicle(vehicle) : { circular: null }
+    const cuotasStr = circular ? formatCuotasForPublication(circular, pVenta) : ''
 
     const text = `🚗 *${marca} ${modelo} ${version}* (${año ?? ''})
 Km: ${formatKm(typeof km === 'number' ? km : 0)}
 💰 Precio de Venta: ${formatPrice(pVenta)}
-💵 Anticipo mínimo: ${formatPrice(pEntregaCalc)}
-
+💵 Anticipo mínimo: ${pEntregaStr}
+${cuotasStr ? `💳 Financiación:\n${cuotasStr}\n` : ''}
 ⛽ Combustible: ${combustible || 'Nafta'} | Caja: ${transmision || 'Manual'}
 📝 ${descripcion || ''}`.trim()
 
@@ -258,9 +288,41 @@ Km: ${formatKm(typeof km === 'number' ? km : 0)}
     }
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in"
-      onClick={onClose}>
+  const handleDeleteVehicle = async () => {
+    if (!vehicle) return
+    const isOkm = vehicle.is_okm_table ?? (vehicle.Tipo_Vehiculo || '').toLowerCase() === '0km'
+    const name = vehicleName(vehicle)
+    const patente = vehicle.Patente ? ` (${vehicle.Patente})` : ''
+
+    if (!confirm(`¿Dar de baja el vehículo ${name}${patente} del stock? Esta acción no se puede deshacer.`)) {
+      return
+    }
+
+    try {
+      setIsDeleting(true)
+      const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
+      const { error } = await supabase.from(tableName).delete().eq('ID', vehicle.ID)
+      if (error) throw error
+
+      try {
+        await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
+      } catch (e) {}
+
+      onClose()
+      if (onDeleted) onDeleted(vehicle.ID)
+      router.refresh()
+    } catch (err: any) {
+      alert('Error al dar de baja el vehículo: ' + (err.message || 'Error desconocido'))
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  return (
+    <>
+      {createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in"
+          onClick={onClose}>
       
       <div className="card w-full max-w-[1360px] max-h-[94vh] flex flex-col overflow-y-auto shadow-2xl rounded-2xl border"
         style={{ background: '#0F1117', borderColor: '#2A2F45', color: '#FFFFFF' }}
@@ -314,6 +376,17 @@ Km: ${formatKm(typeof km === 'number' ? km : 0)}
                 <CheckCircle2 size={14} /> Guardado
               </span>
             )}
+
+            {/* Botón Eliminar Vehículo */}
+            <button
+              type="button"
+              onClick={handleDeleteVehicle}
+              disabled={isDeleting}
+              title="Dar de baja / Eliminar este vehículo del stock"
+              className="h-9 px-3 rounded-xl flex items-center gap-1.5 transition-all text-xs font-extrabold text-[#EF4444] bg-[#EF444415] hover:bg-[#EF444425] border border-[#EF444430] cursor-pointer disabled:opacity-50">
+              {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              <span className="hidden sm:inline">Eliminar</span>
+            </button>
 
             <button onClick={onClose}
               className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
@@ -563,18 +636,46 @@ Km: ${formatKm(typeof km === 'number' ? km : 0)}
 
               <div className={`grid ${showInfoPrice ? 'grid-cols-2' : 'grid-cols-1'} gap-3 border-t border-[#FACC1520] pt-2.5`}>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase truncate" style={{ color: '#A0A5BD' }}>Entrega Mínima</p>
+                  <div className="flex items-center justify-between gap-1 mb-0.5">
+                    <p className="text-xs font-bold uppercase truncate" style={{ color: '#A0A5BD' }}>Entrega Mínima</p>
+                    {isOkm && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setShowCircularModal(true)
+                        }}
+                        className="w-5 h-5 rounded-full bg-[#1F2337] hover:bg-[#FACC15] text-[#A0A5BD] hover:text-black flex items-center justify-center transition-all shadow-sm group border border-[#2A2F45] cursor-pointer"
+                        title="Configurar Circular de Financiación (0KM)"
+                      >
+                        <Settings className="w-3 h-3 group-hover:rotate-45 transition-transform" />
+                      </button>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1 mt-0.5 min-w-0">
                     <span className="text-sm font-bold shrink-0" style={{ color: '#FFFFFF' }}>$</span>
                     <input
                       type="text"
-                      inputMode="numeric"
                       className="bg-transparent border border-transparent hover:border-[#2A2F45] focus:border-[#FACC15] focus:bg-[#1A1D28] rounded w-full text-sm sm:text-base lg:text-lg font-black min-w-0"
                       style={{ color: '#FFFFFF', outline: 'none' }}
                       placeholder={typeof precioVenta === 'number' && precioVenta > 0 ? formatNumberDots(precioVenta * 0.5) : '0'}
-                      value={formatNumberDots(precioEntrega)}
-                      onChange={e => setPrecioEntrega(parseNumberFromDots(e.target.value))}
-                      onBlur={() => autoSaveField({ Precio_entrega: typeof precioEntrega === 'number' ? precioEntrega : undefined })}
+                      value={typeof precioEntrega === 'number' ? formatNumberDots(precioEntrega) : (precioEntrega ?? '')}
+                      onChange={e => setPrecioEntrega(e.target.value)}
+                      onBlur={() => {
+                        let valToSave: number | string | undefined = undefined
+                        if (typeof precioEntrega === 'number') {
+                          valToSave = precioEntrega
+                        } else if (typeof precioEntrega === 'string' && precioEntrega.trim() !== '') {
+                          const cleanDigits = precioEntrega.replace(/\./g, '').replace(/,/g, '').trim()
+                          if (/^\d+$/.test(cleanDigits)) {
+                            valToSave = parseInt(cleanDigits, 10)
+                          } else {
+                            valToSave = precioEntrega.trim()
+                          }
+                        }
+                        autoSaveField({ Precio_entrega: valToSave })
+                      }}
                     />
                   </div>
                 </div>
@@ -636,12 +737,38 @@ Km: ${formatKm(typeof km === 'number' ? km : 0)}
               </button>
             </div>
 
+            {/* Botón Dar de Baja Vehículo */}
+            <button
+              type="button"
+              onClick={handleDeleteVehicle}
+              disabled={isDeleting}
+              title="Dar de baja este vehículo del stock definitivamente"
+              className="w-full py-2.5 px-3 rounded-xl border border-[#EF444430] bg-[#EF444410] hover:bg-[#EF444420] text-[#EF4444] text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-1">
+              {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              <span>Dar de baja vehículo del stock</span>
+            </button>
+
           </div>
 
         </div>
 
       </div>
-    </div>,
-    document.body
+        </div>,
+        document.body
+      )}
+
+      {/* Modal de Circular de Financiación 0KM */}
+      {isOkm && showCircularModal && (
+        <CircularModal
+          vehicle={vehicle}
+          isOpen={showCircularModal}
+          onClose={() => setShowCircularModal(false)}
+          onApplyEntrega={(entregaCalculada) => {
+            setPrecioEntrega(entregaCalculada)
+            autoSaveField({ Precio_entrega: entregaCalculada })
+          }}
+        />
+      )}
+    </>
   )
 }

@@ -185,6 +185,9 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
       }).eq('ID', vehicle.ID)
 
       localStorage.setItem(`gastos_auto_${vehicle.ID}`, JSON.stringify(gastos))
+      try {
+        await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
+      } catch (e) {}
       alert('¡Información de gastos e inversión guardada!')
       router.refresh()
     } catch (err) {
@@ -242,7 +245,12 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
         Detalle_Conversacion: `Venta de ${vehicleName(vehicle)} por $${new Intl.NumberFormat('es-AR').format(precioVentaFinal)} (Ganancia Neta: $${new Intl.NumberFormat('es-AR').format(gananciaNeta)}). Método: ${metodoVenta}`
       })
 
-      // 3. Save report locally
+      // 3. Invalidate vehicle cache
+      try {
+        await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
+      } catch (e) {}
+
+      // 4. Save report locally
       localStorage.setItem(`reporte_venta_${vehicle.ID}`, JSON.stringify(reporte))
       setReporteGenerado(reporte)
       router.refresh()

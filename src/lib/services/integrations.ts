@@ -25,6 +25,8 @@ export async function getUserAgencyId(supabase: SupabaseClient, userId?: string)
   return profile?.agency_id || DEFAULT_AGENCY_ID
 }
 
+let agencyIntegrationsTableMissing = false
+
 /**
  * Consulta la integración de un proveedor para una agencia
  */
@@ -33,6 +35,8 @@ export async function getAgencyIntegration(
   agencyId: string,
   provider: string = 'mercadolibre'
 ): Promise<AgencyIntegration | null> {
+  if (agencyIntegrationsTableMissing) return null
+
   try {
     const { data, error } = await supabase
       .from('agency_integrations')
@@ -42,6 +46,9 @@ export async function getAgencyIntegration(
       .maybeSingle()
 
     if (error) {
+      if (error.message?.includes('schema cache')) {
+        agencyIntegrationsTableMissing = true
+      }
       console.warn(`[Integrations Service] Error fetching integration for ${provider}:`, error.message)
       return null
     }
@@ -166,11 +173,145 @@ export async function getValidMercadoLibreToken(
     return { accessToken: integration.access_token, refreshed: false, source: 'db' }
   }
 
-  // Fallback a variable de entorno si aún no existe registro en DB
-  const envToken = process.env.MERCADOLIBRE_ACCESS_TOKEN?.trim()
-  if (envToken) {
-    return { accessToken: envToken, refreshed: false, source: 'env' }
+  // Fallback a variable de entorno solo para agencia por defecto de desarrollo
+  if (agencyId === DEFAULT_AGENCY_ID) {
+    const envToken = process.env.MERCADOLIBRE_ACCESS_TOKEN?.trim()
+    if (envToken) {
+      return { accessToken: envToken, refreshed: false, source: 'env' }
+    }
   }
 
   return { accessToken: null, refreshed: false, source: 'none' }
 }
+
+/**
+ * Obtiene el Page ID y Page Access Token de Facebook para la agencia
+ */
+export async function getValidFacebookPageToken(
+  supabase: SupabaseClient,
+  agencyId: string
+): Promise<{ pageId: string | null; pageToken: string | null; pageName: string | null; source: 'db' | 'env' | 'none' }> {
+  // Primero buscar en base de datos en agency_integrations con provider = 'facebook_page' o 'facebook'
+  const integration = (await getAgencyIntegration(supabase, agencyId, 'facebook_page')) || 
+                      (await getAgencyIntegration(supabase, agencyId, 'facebook'))
+
+  if (integration && integration.access_token) {
+    const pageId = integration.metadata?.page_id || integration.user_id || process.env.FACEBOOK_PAGE_ID || null
+    return {
+      pageId: pageId ? String(pageId) : null,
+      pageToken: integration.access_token,
+      pageName: integration.nickname || integration.metadata?.page_name || 'Fan Page Concesionaria',
+      source: 'db'
+    }
+  }
+
+  // Fallback a variables de entorno solo para agencia por defecto de desarrollo
+  if (agencyId === DEFAULT_AGENCY_ID) {
+    const envPageId = process.env.FACEBOOK_PAGE_ID?.trim() || null
+    const envPageToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN?.trim() || null
+
+    if (envPageId && envPageToken) {
+      return {
+        pageId: envPageId,
+        pageToken: envPageToken,
+        pageName: process.env.FACEBOOK_PAGE_NAME?.trim() || 'Fan Page Oficial',
+        source: 'env'
+      }
+    }
+  }
+
+  return { pageId: null, pageToken: null, pageName: null, source: 'none' }
+}
+
+/**
+ * Obtiene el Instagram Account ID y Access Token para la agencia
+ */
+export async function getValidInstagramToken(
+  supabase: SupabaseClient,
+  agencyId: string
+): Promise<{ igUserId: string | null; accessToken: string | null; username: string | null; source: 'db' | 'env' | 'none' }> {
+  // 1. Buscar en agency_integrations con provider = 'instagram'
+  const igIntegration = await getAgencyIntegration(supabase, agencyId, 'instagram')
+  if (igIntegration && igIntegration.access_token) {
+    return {
+      igUserId: igIntegration.user_id || process.env.INSTAGRAM_ACCOUNT_ID || '17841474277477470',
+      accessToken: igIntegration.access_token,
+      username: igIntegration.nickname || process.env.INSTAGRAM_USERNAME || 'okmmotors',
+      source: 'db'
+    }
+  }
+
+  // 2. Buscar si la Fan Page tiene asociado el Instagram Business Account
+  const fbIntegration = (await getAgencyIntegration(supabase, agencyId, 'facebook_page')) ||
+                        (await getAgencyIntegration(supabase, agencyId, 'facebook'))
+  if (fbIntegration && fbIntegration.access_token) {
+    const igFromMeta = fbIntegration.metadata?.instagram_business_account
+    if (igFromMeta?.id) {
+      return {
+        igUserId: igFromMeta.id,
+        accessToken: fbIntegration.access_token,
+        username: igFromMeta.username || 'okmmotors',
+        source: 'db'
+      }
+    }
+  }
+
+  // 3. Fallback a variables de entorno solo para agencia por defecto de desarrollo
+  if (agencyId === DEFAULT_AGENCY_ID) {
+    const envIgUserId = process.env.INSTAGRAM_ACCOUNT_ID?.trim() || null
+    const envAccessToken = process.env.INSTAGRAM_ACCESS_TOKEN?.trim() || process.env.FACEBOOK_PAGE_ACCESS_TOKEN?.trim() || null
+    const envUsername = process.env.INSTAGRAM_USERNAME?.trim() || null
+
+    if (envAccessToken) {
+      return {
+        igUserId: envIgUserId,
+        accessToken: envAccessToken,
+        username: envUsername,
+        source: 'env'
+      }
+    }
+  }
+
+  return { igUserId: null, accessToken: null, username: null, source: 'none' }
+}
+
+/**
+ * Obtiene el access_token y open_id de TikTok para la agencia
+ */
+export async function getValidTikTokToken(
+  supabase: SupabaseClient,
+  agencyId: string
+): Promise<{ openId: string | null; accessToken: string | null; username: string | null; displayName: string | null; source: 'db' | 'env' | 'none' }> {
+  const integration = await getAgencyIntegration(supabase, agencyId, 'tiktok')
+  if (integration && integration.access_token) {
+    return {
+      openId: integration.user_id || null,
+      accessToken: integration.access_token,
+      username: integration.nickname || integration.metadata?.username || null,
+      displayName: integration.metadata?.display_name || integration.nickname || 'Cuenta TikTok',
+      source: 'db'
+    }
+  }
+
+  // Fallback a variables de entorno solo para desarrollo
+  if (agencyId === DEFAULT_AGENCY_ID) {
+    const envOpenId = process.env.TIKTOK_OPEN_ID?.trim() || null
+    const envAccessToken = process.env.TIKTOK_ACCESS_TOKEN?.trim() || null
+    const envUsername = process.env.TIKTOK_USERNAME?.trim() || null
+
+    if (envAccessToken) {
+      return {
+        openId: envOpenId,
+        accessToken: envAccessToken,
+        username: envUsername,
+        displayName: process.env.TIKTOK_DISPLAY_NAME || envUsername || 'TikTok Oficial',
+        source: 'env'
+      }
+    }
+  }
+
+  return { openId: null, accessToken: null, username: null, displayName: null, source: 'none' }
+}
+
+
+
