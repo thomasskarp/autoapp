@@ -27,7 +27,7 @@ export interface PublishVehiclePayload {
 
 declare const chrome: any
 
-const EXTENSION_ID = 'YOUR_EXTENSION_ID' 
+const EXTENSION_ID = 'kjfjedgjkehndonpbgkffilaidcdpjob' 
 
   // Convert image URL to Base64 using Next.js proxy route to bypass CORS safely
 export async function downloadImageAsBase64(url: string): Promise<string | null> {

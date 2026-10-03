@@ -461,25 +461,35 @@ export default function ConfiguracionPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center flex-wrap gap-2">
+              <a
+                href="https://chromewebstore.google.com/detail/dev-auto-cyborg-360/kjfjedgjkehndonpbgkffilaidcdpjob?hl=es"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary px-4 py-2 text-xs font-black flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+                <ExternalLink size={15} />
+                <span>Instalar en 1 Clic (Chrome Store)</span>
+              </a>
+
               <button
                 onClick={() => {
-                  const link = `${window.location.origin}/auto-cyborg-360.zip`
+                  const link = 'https://chromewebstore.google.com/detail/dev-auto-cyborg-360/kjfjedgjkehndonpbgkffilaidcdpjob?hl=es'
                   navigator.clipboard.writeText(link)
                   setCopiedExtensionLink(true)
                   setTimeout(() => setCopiedExtensionLink(false), 2000)
                 }}
                 className="px-3 py-2 rounded-xl text-xs font-bold bg-[#1A1D28] hover:bg-[#252A3D] text-[#8B8FA8] hover:text-white transition-all flex items-center gap-1.5 cursor-pointer">
                 {copiedExtensionLink ? <Check size={14} className="text-[#22C55E]" /> : <Copy size={14} />}
-                <span>{copiedExtensionLink ? '¡Link Copiado!' : 'Copiar Link de Descarga'}</span>
+                <span>{copiedExtensionLink ? '¡Link Copiado!' : 'Copiar Link de Chrome Store'}</span>
               </button>
 
               <a
                 href="/auto-cyborg-360.zip"
                 download="auto-cyborg-360.zip"
-                className="btn-primary px-4 py-2 text-xs font-black flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
-                <Download size={15} />
-                <span>Descargar Extensión (.ZIP)</span>
+                title="Descarga manual en caso de no poder acceder a la tienda"
+                className="px-3 py-2 rounded-xl text-xs font-bold bg-[#141722] hover:bg-[#1E2335] text-[#8B8FA8] hover:text-white border border-[#2A2F45] transition-all flex items-center gap-1.5 cursor-pointer">
+                <Download size={14} />
+                <span>Descargar .ZIP</span>
               </a>
             </div>
           </div>
@@ -515,6 +525,29 @@ export default function ConfiguracionPage() {
               </div>
             </div>
 
+            {/* Método 1: Chrome Store (Recomendado 1-Clic) */}
+            <div className="p-4 rounded-xl bg-[#FACC1510] border border-[#FACC1530] mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#FACC1520] text-[#FACC15] flex items-center justify-center font-black text-sm shrink-0">
+                  ⚡
+                </div>
+                <div>
+                  <p className="text-xs font-black text-white">Método más rápido (1 Clic desde la Tienda)</p>
+                  <p className="text-[11px] text-[#A0A5BD]">
+                    Tus vendedores solo deben entrar al enlace de Chrome Store y presionar el botón azul <strong>"Añadir a Chrome"</strong> (o <strong>"Añadir a Brave"</strong>).
+                  </p>
+                </div>
+              </div>
+              <a
+                href="https://chromewebstore.google.com/detail/dev-auto-cyborg-360/kjfjedgjkehndonpbgkffilaidcdpjob?hl=es"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary px-3.5 py-1.5 text-xs font-black flex items-center gap-1.5 shadow cursor-pointer">
+                <ExternalLink size={13} />
+                <span>Abrir en Chrome Web Store</span>
+              </a>
+            </div>
+
             {/* Pasos para Chrome */}
             {browserGuide === 'chrome' && (
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -522,7 +555,7 @@ export default function ConfiguracionPage() {
                   <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">1</div>
                   <p className="text-xs font-bold text-white">Descargar y Descomprimir</p>
                   <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                    Hacé clic en <strong>Descargar Extensión</strong> y descomprimí el archivo .zip en tu computadora. Te quedará la carpeta <code>auto-cyborg-360</code>.
+                    Hacé clic en <strong>Descargar Extensión (.ZIP)</strong> y descomprimí el archivo en tu computadora. Te quedará la carpeta <code>auto-cyborg-360</code>.
                   </p>
                 </div>
 
