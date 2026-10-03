@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { Header } from '@/components/layout/header'
 import {
   Users, UserPlus, Key, Mail, Shield, Trash2, Eye, EyeOff,
-  CheckCircle2, AlertCircle, Loader2, Sparkles, Copy, Check, RefreshCw
+  CheckCircle2, AlertCircle, Loader2, Sparkles, Copy, Check, RefreshCw,
+  Puzzle, Download, ExternalLink, ShieldAlert, Laptop
 } from 'lucide-react'
 
 interface Vendedor {
@@ -32,6 +33,8 @@ export default function ConfiguracionPage() {
   // Copiado al portapapeles
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [copiedCreds, setCopiedCreds] = useState(false)
+  const [browserGuide, setBrowserGuide] = useState<'chrome' | 'brave'>('chrome')
+  const [copiedExtensionLink, setCopiedExtensionLink] = useState(false)
 
   // Modal para cambiar contraseña
   const [editingVendedor, setEditingVendedor] = useState<Vendedor | null>(null)
@@ -436,6 +439,177 @@ export default function ConfiguracionPage() {
               </table>
             </div>
           )}
+        </div>
+
+        {/* Módulo: EXTENSIÓN AUTO-CYBORG 360 PARA VENDEDORES */}
+        <div className="card p-6 border border-[#1F2337] bg-[#13161F]">
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[#1F2337]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#FACC1515] border border-[#FACC1530] flex items-center justify-center text-[#FACC15] shrink-0">
+                <Puzzle size={22} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-black text-white">Extensión Publicadora (Auto-Cyborg 360)</h3>
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#22C55E20] text-[#22C55E] border border-[#22C55E40]">
+                    v1.0.0 Lista
+                  </span>
+                </div>
+                <p className="text-xs text-[#8B8FA8] mt-0.5">
+                  Permite a tus vendedores publicar en Facebook Marketplace, Instagram y WhatsApp en 5 segundos con fotos y datos autocompletados.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const link = `${window.location.origin}/auto-cyborg-360.zip`
+                  navigator.clipboard.writeText(link)
+                  setCopiedExtensionLink(true)
+                  setTimeout(() => setCopiedExtensionLink(false), 2000)
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-bold bg-[#1A1D28] hover:bg-[#252A3D] text-[#8B8FA8] hover:text-white transition-all flex items-center gap-1.5 cursor-pointer">
+                {copiedExtensionLink ? <Check size={14} className="text-[#22C55E]" /> : <Copy size={14} />}
+                <span>{copiedExtensionLink ? '¡Link Copiado!' : 'Copiar Link de Descarga'}</span>
+              </button>
+
+              <a
+                href="/auto-cyborg-360.zip"
+                download="auto-cyborg-360.zip"
+                className="btn-primary px-4 py-2 text-xs font-black flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+                <Download size={15} />
+                <span>Descargar Extensión (.ZIP)</span>
+              </a>
+            </div>
+          </div>
+
+          {/* Selector de Navegador: Chrome vs Brave */}
+          <div className="mt-5">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#A0A5BD] flex items-center gap-1.5">
+                <Laptop size={14} className="text-[#FACC15]" />
+                <span>Instalación Rápida en 1 Minuto — Elegí el navegador:</span>
+              </span>
+              <div className="flex rounded-lg bg-[#0F1117] p-1 border border-[#2A2F45]">
+                <button
+                  type="button"
+                  onClick={() => setBrowserGuide('chrome')}
+                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    browserGuide === 'chrome'
+                      ? 'bg-[#FACC15] text-[#0F1117] shadow'
+                      : 'text-[#8B8FA8] hover:text-white'
+                  }`}>
+                  Google Chrome
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBrowserGuide('brave')}
+                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    browserGuide === 'brave'
+                      ? 'bg-[#FACC15] text-[#0F1117] shadow'
+                      : 'text-[#8B8FA8] hover:text-white'
+                  }`}>
+                  Brave Browser
+                </button>
+              </div>
+            </div>
+
+            {/* Pasos para Chrome */}
+            {browserGuide === 'chrome' && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
+                  <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">1</div>
+                  <p className="text-xs font-bold text-white">Descargar y Descomprimir</p>
+                  <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
+                    Hacé clic en <strong>Descargar Extensión</strong> y descomprimí el archivo .zip en tu computadora. Te quedará la carpeta <code>auto-cyborg-360</code>.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
+                  <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">2</div>
+                  <p className="text-xs font-bold text-white">Abrir Extensiones</p>
+                  <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
+                    Abrí una nueva pestaña en Chrome y pegá en la barra:
+                  </p>
+                  <code className="text-[11px] font-mono font-bold text-[#FACC15] bg-[#161922] px-2 py-1 rounded border border-[#2A2F45]">
+                    chrome://extensions
+                  </code>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
+                  <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">3</div>
+                  <p className="text-xs font-bold text-white">Modo Desarrollador</p>
+                  <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
+                    Arriba a la derecha de la pantalla, activá la palanquita que dice <strong>"Modo de desarrollador"</strong>.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
+                  <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">4</div>
+                  <p className="text-xs font-bold text-white">Cargar Descomprimida</p>
+                  <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
+                    Hacé clic en el botón <strong>"Cargar descomprimida"</strong> (arriba a la izquierda) y elegí la carpeta <code>auto-cyborg-360</code>. ¡Listo!
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Pasos para Brave */}
+            {browserGuide === 'brave' && (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
+                    <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">1</div>
+                    <p className="text-xs font-bold text-white">Descargar y Descomprimir</p>
+                    <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
+                      Descargá el archivo .zip y descomprimilo en tu computadora para obtener la carpeta <code>auto-cyborg-360</code>.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
+                    <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">2</div>
+                    <p className="text-xs font-bold text-white">Abrir Extensiones en Brave</p>
+                    <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
+                      En la barra de direcciones de Brave pegá:
+                    </p>
+                    <code className="text-[11px] font-mono font-bold text-[#FACC15] bg-[#161922] px-2 py-1 rounded border border-[#2A2F45]">
+                      brave://extensions
+                    </code>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
+                    <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">3</div>
+                    <p className="text-xs font-bold text-white">Modo Desarrollador</p>
+                    <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
+                      Arriba a la derecha, activá la casilla <strong>"Modo de desarrollador"</strong>.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
+                    <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">4</div>
+                    <p className="text-xs font-bold text-white">Cargar Descomprimida</p>
+                    <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
+                      Clic en <strong>"Cargar descomprimida"</strong> y seleccioná la carpeta <code>auto-cyborg-360</code>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Aviso especial de Brave Shields */}
+                <div className="p-3.5 rounded-xl bg-[#FB923C12] border border-[#FB923C30] flex items-start gap-3">
+                  <ShieldAlert size={18} className="text-[#FB923C] shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-black text-[#FB923C]">
+                      🦁 Diferencia con Brave: Escudos de Protección (Brave Shields)
+                    </p>
+                    <p className="text-[11px] text-[#A0A5BD] mt-0.5 leading-relaxed">
+                      Brave utiliza el mismo motor que Google Chrome (Chromium), por lo que la extensión es <strong>100% compatible</strong>. La única diferencia es que Brave bloquea scripts de comunicación entre pestañas por defecto. Si al hacer clic en <em>"Publicar en Marketplace"</em> la pestaña de Facebook no carga automáticamente las fotos, hacé clic en el <strong>ícono del león en la barra de direcciones</strong> y desactivá los escudos para <code>autoapp.vercel.app</code> y <code>facebook.com</code>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
       </div>
