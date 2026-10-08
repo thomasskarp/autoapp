@@ -264,7 +264,7 @@ export async function publishToFacebookMarketplace(
     Tipo_Carroceria: car.Tipo_Carroceria,
     Estado_Vehiculo: car.Estado_Vehiculo,
     Tipo_Vehiculo: car.Tipo_Vehiculo,
-    photoLinks: car.photoLinks.slice(0, 15),
+    photoLinks: car.photoLinks.slice(0, 20),
     imagenPath: car.imagenPath,
     descripcion: car.descripcion
   }

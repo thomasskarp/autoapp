@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Auto-Cyborg 360 — Publicador Automotriz",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Automatización y puente DOM para publicación de vehículos en Facebook Marketplace, Instagram y WhatsApp desde AutoApp.",
   "icons": {
     "16": "icons/icon16.png",
@@ -25,6 +25,8 @@
     "*://www.instagram.com/*",
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",
+    "*://*.vercel.app/*",
+    "*://autoapp.vercel.app/*",
     "https://*.vercel.app/*"
   ],
   "background": {
@@ -48,6 +50,8 @@
         "*://www.instagram.com/*",
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*",
+        "*://*.vercel.app/*",
+        "*://autoapp.vercel.app/*",
         "https://*.vercel.app/*"
       ],
       "js": ["content.js"],

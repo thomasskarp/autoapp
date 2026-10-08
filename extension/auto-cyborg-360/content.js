@@ -1548,8 +1548,12 @@ async function initFacebookMarketplaceAutomation(carData) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function init() {
-  // 1. Si estamos en AutoApp (localhost / 127.0.0.1 / vercel)
-  if (window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1') || window.location.hostname.includes('vercel.app')) {
+  // 1. Si estamos en AutoApp (localhost / 127.0.0.1 / vercel / autoapp)
+  const isAutoApp = window.location.hostname.includes('localhost') || 
+                    window.location.hostname.includes('127.0.0.1') || 
+                    window.location.hostname.includes('vercel.app') ||
+                    window.location.hostname.includes('autoapp')
+  if (isAutoApp) {
     console.log('⚡ [Auto-Cyborg 360] Puente activo en AutoApp.')
     window.addEventListener('message', (event) => {
       if (event.data && event.data.type === 'AUTOAPP_PUBLISH_TASK') {
