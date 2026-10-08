@@ -15,8 +15,19 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
 
   if (request.type === 'AUTOAPP_PUBLISH_VEHICLE' && request.payload) {
     console.log('🚗 [Auto-Cyborg 360] Payload recibido desde AutoApp:', request.payload)
-    chrome.storage.local.set({ pendingVehicle: request.payload }, () => {
+    chrome.storage.local.set({
+      pendingVehicle: request.payload,
+      fb_active_car: request.payload,
+      active_car: request.payload
+    }, () => {
       sendResponse({ success: true, message: 'Vehículo en cola para autocompletar' })
+    })
+    return true
+  }
+
+  if (request.type === 'SET_STORAGE' && request.data) {
+    chrome.storage.local.set(request.data, () => {
+      sendResponse({ success: true })
     })
     return true
   }

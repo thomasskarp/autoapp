@@ -43,6 +43,7 @@
       "matches": [
         "*://www.facebook.com/marketplace/create/vehicle*",
         "*://www.facebook.com/marketplace/create/*",
+        "*://www.facebook.com/marketplace/*",
         "*://web.whatsapp.com/*",
         "*://www.instagram.com/*",
         "http://localhost:3000/*",

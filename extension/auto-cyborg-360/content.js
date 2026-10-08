@@ -928,6 +928,622 @@ function injectWhatsAppHUD(car, info) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 🚗 AUTOMATIZACIÓN INTELIGENTE DE FACEBOOK MARKETPLACE (facebook.com/marketplace)
+// ─────────────────────────────────────────────────────────────────────────────
+
+let cachedFacebookFiles = []
+let isFacebookPhotosInjected = false
+let isFacebookFieldsFilled = false
+let facebookAutomationLoopInterval = null
+
+// Ayudante para React 18: dispara el setter nativo del prototipo para que React actualice su estado
+function setReactInputValue(element, value) {
+  if (!element || value === undefined || value === null) return false
+  try {
+    element.focus()
+    const strVal = String(value)
+    const valueSetter = Object.getOwnPropertyDescriptor(element, 'value')?.set
+    const prototype = Object.getPrototypeOf(element)
+    const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+
+    if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+      prototypeValueSetter.call(element, strVal)
+    } else if (valueSetter) {
+      valueSetter.call(element, strVal)
+    } else {
+      element.value = strVal
+    }
+
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+    element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }))
+    element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }))
+    return true
+  } catch (e) {
+    console.warn('[Auto-Cyborg] setReactInputValue error:', e)
+    return false
+  }
+}
+
+function setReactTextareaValue(element, value) {
+  if (!element || value === undefined || value === null) return false
+  try {
+    element.focus()
+    const strVal = String(value)
+    const prototype = Object.getPrototypeOf(element)
+    const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+
+    if (prototypeValueSetter) {
+      prototypeValueSetter.call(element, strVal)
+    } else {
+      element.value = strVal
+    }
+
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  } catch (e) {
+    console.warn('[Auto-Cyborg] setReactTextareaValue error:', e)
+    return false
+  }
+}
+
+// Localiza el input[type="file"] en Facebook Marketplace
+function findFacebookFileInput() {
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]'))
+  for (const inp of inputs) {
+    const accept = inp.getAttribute('accept') || ''
+    if (accept.includes('image') || accept === '' || accept.includes('*')) {
+      return inp
+    }
+  }
+  return inputs[0] || null
+}
+
+// Localiza el contenedor o dropzone visual de fotos en Facebook Marketplace
+function findFacebookDropzone() {
+  const candidates = Array.from(document.querySelectorAll('div[role="button"], div[tabindex], label, div'))
+  for (const el of candidates) {
+    const txt = (el.innerText || el.textContent || '').trim().toLowerCase()
+    if (
+      txt.includes('agregar fotos') ||
+      txt.includes('añadir fotos') ||
+      txt.includes('add photos') ||
+      txt.includes('subir fotos') ||
+      txt.includes('arrastra y suelta') ||
+      txt.includes('drag and drop')
+    ) {
+      return el
+    }
+  }
+  return null
+}
+
+// Descarga una imagen vía Background Service Worker para saltar CSP / CORS
+async function fetchImageBase64FromBackground(url) {
+  return new Promise((resolve) => {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({ type: 'FETCH_IMAGE_BASE64', url }, (res) => {
+        if (res && res.success && res.base64) {
+          resolve(res.base64)
+        } else {
+          resolve(null)
+        }
+      })
+    } else {
+      resolve(null)
+    }
+  })
+}
+
+// Prepara el lote de archivos File[] para el vehículo desde Base64 o URL
+async function prepareFacebookFiles(car, onProgress) {
+  if (cachedFacebookFiles.length > 0) return cachedFacebookFiles
+
+  const files = []
+
+  // 1. A partir de las imágenes ya convertidas a Base64
+  if (Array.isArray(car.images) && car.images.length > 0) {
+    console.log(`[Auto-Cyborg] Preparando ${car.images.length} fotos desde base64...`)
+    for (let i = 0; i < car.images.length; i++) {
+      const b64 = car.images[i]
+      if (b64 && typeof b64 === 'string') {
+        const blob = base64ToBlob(b64, 'image/jpeg')
+        if (blob) {
+          files.push(new File([blob], `vehiculo_${i + 1}.jpg`, { type: 'image/jpeg' }))
+        }
+      }
+    }
+  }
+
+  // 2. Si faltan imágenes o no había base64, descargar desde photoLinks
+  const links = Array.isArray(car.photoLinks) ? car.photoLinks : (car.imagenPath ? [car.imagenPath] : [])
+  if (files.length < links.length && links.length > 0) {
+    console.log(`[Auto-Cyborg] Descargando ${links.length - files.length} fotos adicionales vía background...`)
+    const startIndex = files.length
+    for (let i = startIndex; i < Math.min(links.length, 20); i++) {
+      const url = links[i]
+      if (onProgress) onProgress(i + 1, links.length)
+      try {
+        const bgBase64 = await fetchImageBase64FromBackground(url)
+        if (bgBase64) {
+          const blob = base64ToBlob(bgBase64, 'image/jpeg')
+          if (blob) {
+            files.push(new File([blob], `vehiculo_${i + 1}.jpg`, { type: 'image/jpeg' }))
+          }
+        }
+      } catch (e) {
+        console.warn('[Auto-Cyborg] Error descargando foto:', url, e)
+      }
+    }
+  }
+
+  cachedFacebookFiles = files
+  return files
+}
+
+// Inyección de fotos en el input de Facebook Marketplace
+async function injectPhotosIntoFacebook(files) {
+  if (!files || files.length === 0) return false
+  const fileInput = findFacebookFileInput()
+  if (!fileInput) {
+    console.warn('[Auto-Cyborg] No se encontró input[type="file"] en Facebook Marketplace')
+    return false
+  }
+
+  try {
+    const dt = new DataTransfer()
+    for (const f of files) {
+      dt.items.add(f)
+    }
+
+    fileInput.files = dt.files
+    fileInput.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+    fileInput.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
+
+    const dropzone = findFacebookDropzone() || fileInput.parentElement
+    if (dropzone) {
+      try {
+        const dropEvt = new DragEvent('drop', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: dt
+        })
+        dropzone.dispatchEvent(dropEvt)
+      } catch (e) {}
+    }
+
+    console.log(`✅ [Auto-Cyborg] ${files.length} fotos inyectadas en Facebook Marketplace!`)
+    return true
+  } catch (err) {
+    console.error('[Auto-Cyborg] Error inyectando fotos en Facebook:', err)
+    return false
+  }
+}
+
+// Rellena los campos de texto del formulario de Marketplace
+function fillFacebookVehicleForm(car) {
+  let filledSomething = false
+
+  // 1. Precio
+  const rawPrice = car.precioNumero || (car.precio ? car.precio.replace(/\D/g, '') : '')
+  if (rawPrice) {
+    const priceSelectors = [
+      'input[aria-label*="Precio" i]',
+      'input[aria-label*="Price" i]',
+      'input[name*="price" i]'
+    ]
+    for (const sel of priceSelectors) {
+      const inp = document.querySelector(sel)
+      if (inp && (!inp.value || inp.value === '0')) {
+        if (setReactInputValue(inp, String(rawPrice))) {
+          filledSomething = true
+          break
+        }
+      }
+    }
+    if (!filledSomething) {
+      const labels = Array.from(document.querySelectorAll('label'))
+      for (const l of labels) {
+        const txt = (l.innerText || '').toLowerCase()
+        if (txt.includes('precio') || txt.includes('price')) {
+          const inp = l.querySelector('input') || document.getElementById(l.getAttribute('for'))
+          if (inp && (!inp.value || inp.value === '0')) {
+            if (setReactInputValue(inp, String(rawPrice))) {
+              filledSomething = true
+              break
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Kilometraje
+  const rawKms = car.kms ? car.kms.replace(/\D/g, '') : ''
+  if (rawKms) {
+    const kmSelectors = [
+      'input[aria-label*="Kilometraje" i]',
+      'input[aria-label*="Mileage" i]',
+      'input[aria-label*="Odómetro" i]',
+      'input[aria-label*="Odometer" i]'
+    ]
+    for (const sel of kmSelectors) {
+      const inp = document.querySelector(sel)
+      if (inp && (!inp.value || inp.value === '0')) {
+        if (setReactInputValue(inp, String(rawKms))) {
+          filledSomething = true
+          break
+        }
+      }
+    }
+    const labels = Array.from(document.querySelectorAll('label'))
+    for (const l of labels) {
+      const txt = (l.innerText || '').toLowerCase()
+      if (txt.includes('kilometraje') || txt.includes('mileage') || txt.includes('odómetro')) {
+        const inp = l.querySelector('input') || document.getElementById(l.getAttribute('for'))
+        if (inp && (!inp.value || inp.value === '0')) {
+          if (setReactInputValue(inp, String(rawKms))) {
+            filledSomething = true
+            break
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Año
+  const rawYear = car.anio ? String(car.anio).trim() : ''
+  if (rawYear) {
+    const yearSelectors = [
+      'input[aria-label*="Año" i]',
+      'input[aria-label*="Year" i]'
+    ]
+    for (const sel of yearSelectors) {
+      const inp = document.querySelector(sel)
+      if (inp && !inp.value) {
+        if (setReactInputValue(inp, rawYear)) {
+          filledSomething = true
+          break
+        }
+      }
+    }
+  }
+
+  // 4. Marca & Modelo
+  if (car.marca) {
+    const makeInp = document.querySelector('input[aria-label*="Marca" i], input[aria-label*="Make" i]')
+    if (makeInp && !makeInp.value) {
+      setReactInputValue(makeInp, car.marca)
+      filledSomething = true
+    }
+  }
+  if (car.modelo) {
+    const modelInp = document.querySelector('input[aria-label*="Modelo" i], input[aria-label*="Model" i]')
+    if (modelInp && !modelInp.value) {
+      setReactInputValue(modelInp, car.modelo)
+      filledSomething = true
+    }
+  }
+
+  // 5. Descripción
+  const desc = car.descripcion || ''
+  if (desc) {
+    const descSelectors = [
+      'textarea[aria-label*="Descripción" i]',
+      'textarea[aria-label*="Description" i]',
+      'textarea'
+    ]
+    for (const sel of descSelectors) {
+      const txtarea = document.querySelector(sel)
+      if (txtarea && !txtarea.value) {
+        if (setReactTextareaValue(txtarea, desc)) {
+          filledSomething = true
+          break
+        }
+      }
+    }
+
+    const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'))
+    for (const el of editables) {
+      const aria = (el.getAttribute('aria-label') || '').toLowerCase()
+      if ((aria.includes('descripción') || aria.includes('description')) && !el.textContent.trim()) {
+        fillCaption(el, desc)
+        filledSomething = true
+        break
+      }
+    }
+  }
+
+  return filledSomething
+}
+
+// Descarga todas las fotos en lote a la computadora del usuario
+async function downloadAllCarPhotos(car, files) {
+  showAutoAppBanner('Descargando fotos del vehículo...', 'info', 3000)
+  const marca = (car.marca || 'vehiculo').replace(/\s+/g, '_')
+  const modelo = (car.modelo || 'auto').replace(/\s+/g, '_')
+
+  if (files && files.length > 0) {
+    for (let i = 0; i < files.length; i++) {
+      const url = URL.createObjectURL(files[i])
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${marca}_${modelo}_${i + 1}.jpg`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      await new Promise(r => setTimeout(r, 200))
+      URL.revokeObjectURL(url)
+    }
+    showAutoAppBanner(`✅ ¡${files.length} fotos descargadas con éxito!`, 'success')
+  } else if (car.photoLinks && car.photoLinks.length > 0) {
+    for (let i = 0; i < car.photoLinks.length; i++) {
+      const a = document.createElement('a')
+      a.href = car.photoLinks[i]
+      a.download = `${marca}_${modelo}_${i + 1}.jpg`
+      a.target = '_blank'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      await new Promise(r => setTimeout(r, 250))
+    }
+    showAutoAppBanner('✅ ¡Fotos descargadas!', 'success')
+  }
+}
+
+// Inyecta el HUD Asistente Flotante para Facebook Marketplace
+function injectFacebookHUD(car, info) {
+  const existing = document.getElementById('autoapp-fb-hud')
+  if (existing) existing.remove()
+
+  const hud = document.createElement('div')
+  hud.id = 'autoapp-fb-hud'
+  hud.style.position = 'fixed'
+  hud.style.bottom = '20px'
+  hud.style.right = '20px'
+  hud.style.width = '360px'
+  hud.style.backgroundColor = '#111827'
+  hud.style.color = '#F9FAFB'
+  hud.style.borderRadius = '16px'
+  hud.style.boxShadow = '0 20px 40px -5px rgba(0, 0, 0, 0.8), 0 0 0 1px #374151'
+  hud.style.zIndex = '9999999'
+  hud.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+  hud.style.overflow = 'hidden'
+  hud.style.transition = 'all 0.3s ease'
+
+  hud.innerHTML = `
+    <div style="background: linear-gradient(135deg, #1877F2 0%, #0D6EFD 100%); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 16px;">⚡</span>
+        <div>
+          <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #FFFFFF;">Auto-Cyborg 360</div>
+          <div style="font-size: 10px; color: #DBEAFE; font-weight: 500;">Publicador Facebook Marketplace</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <button id="autoapp-fb-min" style="background: rgba(0,0,0,0.25); border: none; color: white; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;">_</button>
+        <button id="autoapp-fb-close" style="background: rgba(0,0,0,0.25); border: none; color: white; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;">✕</button>
+      </div>
+    </div>
+
+    <div id="autoapp-fb-body" style="padding: 14px; display: flex; flex-direction: column; gap: 12px;">
+      <!-- Ficha del Vehículo -->
+      <div style="display: flex; gap: 10px; background: #1F2937; padding: 10px; border-radius: 10px; border: 1px solid #374151;">
+        ${info.imageUrl ? `<img src="${info.imageUrl}" style="width: 58px; height: 58px; object-fit: cover; border-radius: 8px; flex-shrink: 0;" />` : ''}
+        <div style="overflow: hidden; flex: 1;">
+          <div style="font-size: 13px; font-weight: 700; color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${info.title}</div>
+          <div style="font-size: 14px; font-weight: 800; color: #10B981; margin-top: 2px;">${info.price}</div>
+          <div style="font-size: 11px; color: #9CA3AF; margin-top: 2px;">${car.kms || 'Excelente estado'} • ${car.anio || ''}</div>
+        </div>
+      </div>
+
+      <!-- Pasos en tiempo real -->
+      <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: #D1D5DB;">
+        <div style="display: flex; align-items: center; gap: 6px;" id="fb-step-photos">
+          <span style="color: #F59E0B;">●</span> <span>Preparando y subiendo fotos a Marketplace...</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;" id="fb-step-data">
+          <span style="color: #F59E0B;">●</span> <span>Rellenando precio y kilometraje...</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;" id="fb-step-desc">
+          <span style="color: #10B981;">✓</span> <span>Descripción copiada al portapapeles</span>
+        </div>
+      </div>
+
+      <!-- Botones de Acción Inmediata -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <button id="autoapp-fb-btn-photos" style="background: #10B981; color: #000; border: none; padding: 9px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;">
+          <span>📸 Subir Fotos</span>
+        </button>
+        <button id="autoapp-fb-btn-fill" style="background: #1877F2; color: #FFF; border: none; padding: 9px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;">
+          <span>⚡ Rellenar Datos</span>
+        </button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <button id="autoapp-fb-btn-copy" style="background: #374151; color: #FFF; border: 1px solid #4B5563; padding: 7px; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: pointer;">
+          📋 Copiar Descripción
+        </button>
+        <button id="autoapp-fb-btn-download" style="background: #374151; color: #FFF; border: 1px solid #4B5563; padding: 7px; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: pointer;">
+          📥 Descargar Fotos
+        </button>
+      </div>
+    </div>
+  `
+
+  safeAppend(hud)
+
+  // Minimizar / Cerrar
+  let isMinimized = false
+  const bodyEl = document.getElementById('autoapp-fb-body')
+  const minBtn = document.getElementById('autoapp-fb-min')
+  const closeBtn = document.getElementById('autoapp-fb-close')
+
+  minBtn?.addEventListener('click', () => {
+    isMinimized = !isMinimized
+    if (isMinimized) {
+      bodyEl.style.display = 'none'
+      minBtn.innerText = '+'
+      hud.style.width = '240px'
+    } else {
+      bodyEl.style.display = 'flex'
+      minBtn.innerText = '_'
+      hud.style.width = '360px'
+    }
+  })
+
+  closeBtn?.addEventListener('click', () => {
+    hud.remove()
+  })
+
+  // Listeners de los botones
+  document.getElementById('autoapp-fb-btn-photos')?.addEventListener('click', async () => {
+    const btn = document.getElementById('autoapp-fb-btn-photos')
+    btn.innerText = '⏳ Subiendo...'
+    const files = await prepareFacebookFiles(car)
+    if (files.length > 0) {
+      const ok = await injectPhotosIntoFacebook(files)
+      if (ok) {
+        btn.innerText = '✅ ¡Fotos Subidas!'
+        updateFacebookHUDStep('fb-step-photos', true, `${files.length} fotos subidas`)
+        showAutoAppBanner(`¡${files.length} fotos inyectadas en Marketplace!`, 'success')
+      } else {
+        btn.innerText = '⚠️ Reintentar Fotos'
+      }
+    } else {
+      btn.innerText = '⚠️ Sin Fotos'
+    }
+    setTimeout(() => { btn.innerText = '📸 Subir Fotos' }, 3000)
+  })
+
+  document.getElementById('autoapp-fb-btn-fill')?.addEventListener('click', () => {
+    const btn = document.getElementById('autoapp-fb-btn-fill')
+    const filled = fillFacebookVehicleForm(car)
+    if (filled) {
+      btn.innerText = '✅ ¡Rellenado!'
+      updateFacebookHUDStep('fb-step-data', true, 'Datos completados')
+      showAutoAppBanner('Datos del vehículo rellenados en el formulario.', 'success')
+    } else {
+      btn.innerText = '⚠️ Form no listo'
+    }
+    setTimeout(() => { btn.innerText = '⚡ Rellenar Datos' }, 2500)
+  })
+
+  document.getElementById('autoapp-fb-btn-copy')?.addEventListener('click', async () => {
+    const btn = document.getElementById('autoapp-fb-btn-copy')
+    if (car.descripcion) {
+      await navigator.clipboard.writeText(car.descripcion)
+      btn.innerText = '✅ ¡Copiado!'
+      showAutoAppBanner('Descripción copiada al portapapeles.', 'success')
+      setTimeout(() => { btn.innerText = '📋 Copiar Descripción' }, 2000)
+    }
+  })
+
+  document.getElementById('autoapp-fb-btn-download')?.addEventListener('click', async () => {
+    const files = await prepareFacebookFiles(car)
+    downloadAllCarPhotos(car, files)
+  })
+}
+
+function updateFacebookHUDStep(stepId, completed, text) {
+  const stepEl = document.getElementById(stepId)
+  if (stepEl) {
+    stepEl.firstElementChild.innerText = completed ? '✓' : '●'
+    stepEl.firstElementChild.style.color = completed ? '#10B981' : '#F59E0B'
+    if (text) {
+      stepEl.lastElementChild.innerText = text
+    }
+  }
+}
+
+// Bucle de supervisión y autocompletado en Facebook Marketplace
+function startFacebookAutomationLoop(car, info) {
+  if (facebookAutomationLoopInterval) clearInterval(facebookAutomationLoopInterval)
+
+  let ticks = 0
+  const maxTicks = 100 // ~80 segundos máximo
+
+  facebookAutomationLoopInterval = setInterval(async () => {
+    ticks++
+    if (ticks > maxTicks) {
+      clearInterval(facebookAutomationLoopInterval)
+      console.log('⏱️ [Auto-Cyborg 360] Bucle de supervisión de Facebook Marketplace finalizado.')
+      return
+    }
+
+    try {
+      // 1. Detectar e inyectar fotos automáticamente
+      if (!isFacebookPhotosInjected) {
+        const fileInput = findFacebookFileInput()
+        if (fileInput) {
+          const files = await prepareFacebookFiles(car)
+          if (files.length > 0) {
+            const ok = await injectPhotosIntoFacebook(files)
+            if (ok) {
+              isFacebookPhotosInjected = true
+              updateFacebookHUDStep('fb-step-photos', true, `${files.length} fotos subidas con éxito`)
+              showAutoAppBanner(`✅ ¡${files.length} fotos cargadas automáticamente en Marketplace!`, 'success', 6000)
+            }
+          }
+        }
+      }
+
+      // 2. Detectar y rellenar campos de texto y precio
+      if (!isFacebookFieldsFilled) {
+        const filled = fillFacebookVehicleForm(car)
+        if (filled) {
+          isFacebookFieldsFilled = true
+          updateFacebookHUDStep('fb-step-data', true, 'Precio y datos completados')
+          showAutoAppBanner('✅ Datos y precio del vehículo cargados en Marketplace', 'success', 5000)
+        }
+      }
+
+      // 3. Si ambos se cumplieron, frenar el bucle
+      if (isFacebookPhotosInjected && isFacebookFieldsFilled) {
+        clearInterval(facebookAutomationLoopInterval)
+        console.log('🎉 [Auto-Cyborg 360] Automatización de Facebook Marketplace completada!')
+      }
+    } catch (err) {
+      console.warn('[Auto-Cyborg 360] Error en tick de Facebook Marketplace:', err)
+    }
+  }, 800)
+}
+
+// Inicialización de la automatización en Facebook Marketplace
+async function initFacebookMarketplaceAutomation(carData) {
+  console.log('🤖 [Auto-Cyborg 360] Iniciando flujo inteligente de Facebook Marketplace con:', carData)
+  const car = carData
+  const title = `${car.marca || ''} ${car.modelo || ''} ${car.anio || ''}`.trim()
+  const price = car.precio || (car.precioNumero ? `$${Number(car.precioNumero).toLocaleString('es-AR')}` : '')
+  const imageUrl = car.imagenPath || (car.photoLinks && car.photoLinks[0]) || (car.images && car.images[0]) || ''
+
+  // 1. Copiar descripción al portapapeles preventivamente
+  if (car.descripcion) {
+    try {
+      await navigator.clipboard.writeText(car.descripcion)
+      console.log('📋 [Auto-Cyborg 360] Descripción copiada al portapapeles.')
+    } catch (e) {}
+  }
+
+  // 2. Inyectar HUD flotante de inmediato
+  injectFacebookHUD(car, { title, price, imageUrl })
+  showAutoAppBanner(`Auto-Cyborg listo para Marketplace: ${title}`, 'info', 5000)
+
+  // 3. Preparar fotos del vehículo en segundo plano
+  prepareFacebookFiles(car, (curr, total) => {
+    updateFacebookHUDStep('fb-step-photos', false, `Preparando foto ${curr} de ${total}...`)
+  }).then((files) => {
+    if (files.length > 0) {
+      updateFacebookHUDStep('fb-step-photos', false, `${files.length} fotos listas para subir`)
+    }
+  })
+
+  // 4. Iniciar bucle de supervisión DOM
+  startFacebookAutomationLoop(car, { title, price, imageUrl })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 🚀 INICIALIZACIÓN GLOBAL
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -942,7 +1558,17 @@ async function init() {
           if (event.data.target === 'WHATSAPP_STATUS') {
             chrome.storage.local.set({ wa_active_car: payload })
             console.log('🚗 [Auto-Cyborg 360] Vehículo guardado para WhatsApp en storage local:', payload)
+          } else if (event.data.target === 'FACEBOOK_MARKETPLACE') {
+            const carToStore = payload.active_car || payload.fb_active_car || payload
+            chrome.storage.local.set({ fb_active_car: carToStore, active_car: carToStore })
+            console.log('🚗 [Auto-Cyborg 360] Vehículo guardado para Facebook Marketplace en storage local:', carToStore)
           }
+        }
+      }
+      if (event.data && event.data.type === 'AUTOAPP_SET_STORAGE' && event.data.data) {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set(event.data.data)
+          console.log('📦 [Auto-Cyborg 360] Storage directo guardado en Chrome storage:', event.data.data)
         }
       }
     })
@@ -951,10 +1577,14 @@ async function init() {
 
   const hashPayload = getPayloadFromHash()
 
-  // Guardar en storage si viene del hash para persistencia
+  // Guardar en storage si viene del hash para persistencia entre recargas
   if (hashPayload && hashPayload.platform === 'whatsapp') {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.set({ wa_active_car: hashPayload.data })
+    }
+  } else if (hashPayload && hashPayload.platform === 'facebook') {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ fb_active_car: hashPayload.data, active_car: hashPayload.data })
     }
   }
 
@@ -979,15 +1609,19 @@ async function init() {
 
   // 3. Si estamos en Facebook Marketplace
   if (window.location.hostname.includes('facebook.com')) {
-    if (hashPayload && hashPayload.platform === 'facebook') {
-      const payload = hashPayload.data
-      showAutoAppBanner(`Cargando ficha de ${payload.marca || ''} ${payload.modelo || ''}...`, 'success')
-      if (payload.descripcion) {
-        try {
-          await navigator.clipboard.writeText(payload.descripcion)
-          showAutoAppBanner('Descripción copiada al portapapeles para pegar en Marketplace', 'info')
-        } catch (err) {}
-      }
+    let carData = hashPayload && hashPayload.platform === 'facebook' ? hashPayload.data : null
+
+    if (!carData && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      try {
+        const stored = await chrome.storage.local.get(['fb_active_car', 'active_car'])
+        if (stored && (stored.fb_active_car || stored.active_car)) {
+          carData = stored.fb_active_car || stored.active_car
+        }
+      } catch (e) {}
+    }
+
+    if (carData) {
+      initFacebookMarketplaceAutomation(carData)
     }
     return
   }
@@ -1008,9 +1642,9 @@ async function init() {
   }
 }
 
-// Escuchar cambios de hash dinámicos en WhatsApp Web
+// Escuchar cambios de hash dinámicos en WhatsApp Web y Facebook Marketplace
 window.addEventListener('hashchange', () => {
-  if (window.location.hostname.includes('whatsapp.com')) {
+  if (window.location.hostname.includes('whatsapp.com') || window.location.hostname.includes('facebook.com')) {
     init()
   }
 })

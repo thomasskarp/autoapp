@@ -231,6 +231,7 @@ export async function publishToFacebookMarketplace(
       target: 'FACEBOOK_MARKETPLACE',
       payload: {
         active_car: payload,
+        fb_active_car: payload,
         task_status: 'ready_to_fill'
       }
     }, window.location.origin)
@@ -238,6 +239,7 @@ export async function publishToFacebookMarketplace(
 
   const storageData = {
     active_car: payload,
+    fb_active_car: payload,
     task_status: 'ready_to_fill'
   }
 
@@ -261,6 +263,9 @@ export async function publishToFacebookMarketplace(
     transmision: car.transmision,
     Tipo_Carroceria: car.Tipo_Carroceria,
     Estado_Vehiculo: car.Estado_Vehiculo,
+    Tipo_Vehiculo: car.Tipo_Vehiculo,
+    photoLinks: car.photoLinks.slice(0, 15),
+    imagenPath: car.imagenPath,
     descripcion: car.descripcion
   }
 
