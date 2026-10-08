@@ -186,7 +186,9 @@ export async function setExtensionStorage(data: Record<string, any>): Promise<bo
     } catch (e) {}
   }
 
-  window.postMessage({ type: 'AUTOAPP_SET_STORAGE', data }, '*')
+  if (typeof window !== 'undefined') {
+    window.postMessage({ type: 'AUTOAPP_SET_STORAGE', data }, window.location.origin)
+  }
   window.dispatchEvent(new CustomEvent('AutoAppSetStorageEvent', { detail: data }))
 
   return false
@@ -223,14 +225,16 @@ export async function publishToFacebookMarketplace(
   onStatus?.('Enviando vehículo a la extensión Auto-Cyborg...')
 
   // Broadcast payload via window.postMessage for Chrome extension autoapp_bridge content script
-  window.postMessage({
-    type: 'AUTOAPP_PUBLISH_TASK',
-    target: 'FACEBOOK_MARKETPLACE',
-    payload: {
-      active_car: payload,
-      task_status: 'ready_to_fill'
-    }
-  }, '*')
+  if (typeof window !== 'undefined') {
+    window.postMessage({
+      type: 'AUTOAPP_PUBLISH_TASK',
+      target: 'FACEBOOK_MARKETPLACE',
+      payload: {
+        active_car: payload,
+        task_status: 'ready_to_fill'
+      }
+    }, window.location.origin)
+  }
 
   const storageData = {
     active_car: payload,
@@ -313,14 +317,16 @@ export async function publishToInstagramFeed(
 
   onStatus?.('Enviando vehículo a la extensión Auto-Cyborg...')
 
-  window.postMessage({
-    type: 'AUTOAPP_PUBLISH_TASK',
-    target: 'INSTAGRAM_FEED',
-    payload: {
-      ig_active_car: payload,
-      ig_task_status: 'start_sequency'
-    }
-  }, '*')
+  if (typeof window !== 'undefined') {
+    window.postMessage({
+      type: 'AUTOAPP_PUBLISH_TASK',
+      target: 'INSTAGRAM_FEED',
+      payload: {
+        ig_active_car: payload,
+        ig_task_status: 'start_sequency'
+      }
+    }, window.location.origin)
+  }
 
   const storageData = {
     ig_active_car: payload,
@@ -756,11 +762,13 @@ export async function sendVehicleToWhatsAppChat(
 
   // Notificar al puente de la extensión
   try {
-    window.postMessage({
-      type: 'AUTOAPP_PUBLISH_TASK',
-      target: 'WHATSAPP_CHAT',
-      payload: payloadChat
-    }, '*')
+    if (typeof window !== 'undefined') {
+      window.postMessage({
+        type: 'AUTOAPP_PUBLISH_TASK',
+        target: 'WHATSAPP_CHAT',
+        payload: payloadChat
+      }, window.location.origin)
+    }
   } catch (e) {}
 
   // Abrir / enfocar WhatsApp Web con el hash
@@ -1185,12 +1193,14 @@ export async function publishToTikTok(
     isVideo: false
   }
 
-  window.postMessage({
-    type: 'AUTOAPP_PUBLISH_TASK',
-    target: 'TIKTOK_PUBLISH',
-    payload: fullPayload,
-    data: fullPayload
-  }, '*')
+  if (typeof window !== 'undefined') {
+    window.postMessage({
+      type: 'AUTOAPP_PUBLISH_TASK',
+      target: 'TIKTOK_PUBLISH',
+      payload: fullPayload,
+      data: fullPayload
+    }, window.location.origin)
+  }
 
   await setExtensionStorage({
     cyborg_pending_tiktok: fullPayload,

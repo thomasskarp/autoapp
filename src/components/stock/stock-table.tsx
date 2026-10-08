@@ -37,18 +37,126 @@ function isTempPatent(p?: string | null): boolean {
   )
 }
 
-interface Props { vehicles: Vehicle[] }
+interface Props {
+  vehicles: Vehicle[]
+  initialIsAdmin?: boolean
+  initialHiddenBrands?: string[]
+  initialHiddenVehicles?: string[]
+}
 
-export function StockTable({ vehicles }: Props) {
+export function StockTable({
+  vehicles,
+  initialIsAdmin = false,
+  initialHiddenBrands = [],
+  initialHiddenVehicles = []
+}: Props) {
   const { showInfoPrice } = useInfoPrice()
   const router = useRouter()
   const supabase = createClient()
+
+  // Control de rol Administrador vs Vendedor
+  const [isAdmin, setIsAdmin] = useState(initialIsAdmin)
+  const [hiddenBrands, setHiddenBrands] = useState<string[]>(initialHiddenBrands)
+  const [hiddenVehicles, setHiddenVehicles] = useState<string[]>(initialHiddenVehicles)
+
+  // Sincronizar en cliente estado de autenticación y visibilidad en tiempo real
+  useEffect(() => {
+    async function syncAuthAndVisibility() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const rawRole = user.user_metadata?.role?.toLowerCase()
+          const admin =
+            user.email === 'okmmotorschaco@gmail.com' ||
+            user.email === 'tomas.skarp@gmail.com' ||
+            rawRole === 'admin' ||
+            rawRole === 'administrador' ||
+            rawRole === 'superadmin' ||
+            rawRole === 'owner'
+          setIsAdmin(!!admin)
+        } else {
+          setIsAdmin(false)
+        }
+      } catch {}
+
+      try {
+        const res = await fetch('/api/stock/visibility')
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data.hiddenBrands)) {
+            setHiddenBrands(data.hiddenBrands.map((b: string) => String(b).trim().toUpperCase()))
+          }
+          if (Array.isArray(data.hiddenVehicles)) {
+            setHiddenVehicles(data.hiddenVehicles.map((id: any) => String(id)))
+          }
+        }
+      } catch {}
+    }
+
+    syncAuthAndVisibility()
+  }, [])
+
+  // Alternar ocultar / mostrar marca (Solo Admin)
+  const toggleHideBrand = async (brand: string) => {
+    if (!isAdmin) return
+    const norm = normalizeBrandName(brand)
+    const isHidden = hiddenBrands.includes(norm)
+    const updated = isHidden
+      ? hiddenBrands.filter(b => b !== norm)
+      : [...hiddenBrands, norm]
+
+    setHiddenBrands(updated)
+
+    try {
+      await fetch('/api/stock/visibility', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_brand', brand: norm })
+      })
+    } catch (err) {
+      console.error('Error toggling brand visibility:', err)
+    }
+  }
+
+  // Alternar ocultar / mostrar auto individual (Solo Admin)
+  const toggleHideVehicle = async (id: string | number) => {
+    if (!isAdmin) return
+    const strId = String(id)
+    const isHidden = hiddenVehicles.includes(strId)
+    const updated = isHidden
+      ? hiddenVehicles.filter(v => v !== strId)
+      : [...hiddenVehicles, strId]
+
+    setHiddenVehicles(updated)
+
+    try {
+      await fetch('/api/stock/visibility', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_vehicle', id: strId })
+      })
+    } catch (err) {
+      console.error('Error toggling vehicle visibility:', err)
+    }
+  }
 
   // Estado local sincronizado para actualización instantánea (0ms) sin saltos
   const [vehicleList, setVehicleList] = useState<Vehicle[]>(vehicles)
   useEffect(() => {
     setVehicleList(vehicles)
   }, [vehicles])
+
+  // Vehículos efectivos:
+  // Para VENDEDORES: autos ocultos y marcas ocultas NO aparecen jamás
+  // Para ADMINS: se mantienen todos (los ocultos se verán en gris para poder administrarlos)
+  const effectiveVehicles = useMemo(() => {
+    if (isAdmin) return vehicleList
+    return vehicleList.filter(v => {
+      const isCarHidden = hiddenVehicles.includes(String(v.ID))
+      const isBrandHidden = hiddenBrands.includes(normalizeBrandName(v.Marca))
+      return !isCarHidden && !isBrandHidden
+    })
+  }, [vehicleList, isAdmin, hiddenVehicles, hiddenBrands])
 
   const [search, setSearch] = useState('')
   const [selectedTab, setSelectedTab] = useState<TabType>('USADOS')
@@ -114,14 +222,24 @@ export function StockTable({ vehicles }: Props) {
     setCollapsedBrands({})
   }
 
-  // Counts by tab
-  const countUsados = useMemo(() => vehicleList.filter(v => (v.Tipo_Vehiculo || 'Usado').toLowerCase() !== '0km').length, [vehicleList])
-  const countOkm = useMemo(() => vehicleList.filter(v => (v.Tipo_Vehiculo || '').toLowerCase() === '0km').length, [vehicleList])
+  // Counts by tab (basados en vehículos efectivos)
+  const countUsados = useMemo(() => effectiveVehicles.filter(v => (v.Tipo_Vehiculo || 'Usado').toLowerCase() !== '0km').length, [effectiveVehicles])
+  const countOkm = useMemo(() => effectiveVehicles.filter(v => (v.Tipo_Vehiculo || '').toLowerCase() === '0km').length, [effectiveVehicles])
 
-  // Extract brands with counts (normalized case-insensitively)
+  // Vehículos del tab activo (USADOS o 0KM)
+  const tabVehicles = useMemo(() => {
+    return effectiveVehicles.filter(v => {
+      const isOkm = (v.Tipo_Vehiculo || '').toLowerCase() === '0km'
+      if (selectedTab === 'USADOS' && isOkm) return false
+      if (selectedTab === '0KM' && !isOkm) return false
+      return true
+    })
+  }, [effectiveVehicles, selectedTab])
+
+  // Extract brands with counts para el tab activo (normalized case-insensitively)
   const brandStats = useMemo(() => {
     const map: Record<string, number> = {}
-    vehicleList.forEach(v => {
+    tabVehicles.forEach(v => {
       if (v.Marca) {
         const norm = normalizeBrandName(v.Marca)
         map[norm] = (map[norm] || 0) + 1
@@ -130,16 +248,11 @@ export function StockTable({ vehicles }: Props) {
     const list = Object.entries(map).map(([name, count]) => ({ name, count }))
     list.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
     return list
-  }, [vehicleList])
+  }, [tabVehicles])
 
   // Filtered vehicles
-  const filtered = useMemo(() => vehicleList.filter(v => {
-    // 1. Tab filter (Usados vs 0km)
-    const isOkm = (v.Tipo_Vehiculo || '').toLowerCase() === '0km'
-    if (selectedTab === 'USADOS' && isOkm) return false
-    if (selectedTab === '0KM' && !isOkm) return false
-
-    // 2. Search text
+  const filtered = useMemo(() => tabVehicles.filter(v => {
+    // 1. Search text
     const q = search.toLowerCase()
     const matchSearch = !q ||
       vehicleName(v).toLowerCase().includes(q) ||
@@ -147,12 +260,12 @@ export function StockTable({ vehicles }: Props) {
       v.Marca?.toLowerCase().includes(q) ||
       v.Modelo?.toLowerCase().includes(q)
 
-    // 3. Filters
+    // 2. Filters
     const matchState = filterState === 'Todos' || v.Estado === filterState
     const matchBrand = filterBrand === 'Todas' || normalizeBrandName(v.Marca) === normalizeBrandName(filterBrand)
 
     return matchSearch && matchState && matchBrand
-  }), [vehicleList, selectedTab, search, filterState, filterBrand])
+  }), [tabVehicles, search, filterState, filterBrand])
 
   // Group vehicles by Brand with deterministic, rock-solid stable sorting:
   // Cars will NEVER jump or swap places when edited!
@@ -254,7 +367,10 @@ export function StockTable({ vehicles }: Props) {
       <div className="flex flex-wrap items-center justify-between gap-3 card p-3.5">
         <div className="flex items-center gap-1.5 bg-[#0F1117] p-1.5 rounded-xl border border-[#1F2337]">
           <button
-            onClick={() => setSelectedTab('USADOS')}
+            onClick={() => {
+              setSelectedTab('USADOS')
+              setFilterBrand('Todas')
+            }}
             className="px-5 py-2 rounded-lg text-sm font-black transition-all flex items-center gap-2 tracking-wide"
             style={{
               background: selectedTab === 'USADOS' ? '#FACC15' : 'transparent',
@@ -265,7 +381,10 @@ export function StockTable({ vehicles }: Props) {
           </button>
 
           <button
-            onClick={() => setSelectedTab('0KM')}
+            onClick={() => {
+              setSelectedTab('0KM')
+              setFilterBrand('Todas')
+            }}
             className="px-5 py-2 rounded-lg text-sm font-black transition-all flex items-center gap-2 tracking-wide"
             style={{
               background: selectedTab === '0KM' ? '#FDE047' : 'transparent',
@@ -328,26 +447,31 @@ export function StockTable({ vehicles }: Props) {
               border: `1px solid ${filterBrand === 'Todas' ? '#FFFFFF40' : '#1F2337'}`,
               cursor: 'pointer'
             }}>
-            Todas las marcas ({vehicles.length})
+            Todas las marcas ({tabVehicles.length})
           </button>
 
-          {brandStats.map(({ name, count }) => (
-            <button
-              key={name}
-              onClick={() => setFilterBrand(name)}
-              className="px-4 py-2 rounded-full text-xs sm:text-sm font-extrabold transition-all flex-shrink-0 flex items-center gap-2 tracking-wide"
-              style={{
-                background: filterBrand === name ? '#FFFFFF20' : '#13161F',
-                color: filterBrand === name ? '#FFFFFF' : '#F3F4F6',
-                border: `1px solid ${filterBrand === name ? '#FFFFFF40' : '#1F2337'}`,
-                cursor: 'pointer'
-              }}>
-              <span>{name}</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-[#1A1D28] text-[#9CA3AF] font-bold">
-                {count}
-              </span>
-            </button>
-          ))}
+          {brandStats.map(({ name, count }) => {
+            const isPillHidden = hiddenBrands.includes(name)
+            return (
+              <button
+                key={name}
+                onClick={() => setFilterBrand(name)}
+                className={`px-4 py-2 rounded-full text-xs sm:text-sm font-extrabold transition-all flex-shrink-0 flex items-center gap-2 tracking-wide ${
+                  isPillHidden ? 'opacity-40 grayscale' : ''
+                }`}
+                style={{
+                  background: filterBrand === name ? '#FFFFFF20' : '#13161F',
+                  color: filterBrand === name ? '#FFFFFF' : '#F3F4F6',
+                  border: `1px solid ${filterBrand === name ? '#FFFFFF40' : '#1F2337'}`,
+                  cursor: 'pointer'
+                }}>
+                <span>{name}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-[#1A1D28] text-[#9CA3AF] font-bold">
+                  {count}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
         {/* Global Collapse/Expand toggles */}
@@ -377,9 +501,13 @@ export function StockTable({ vehicles }: Props) {
           const visibleVehicles = brandVehicles.slice(0, currentLimit)
           const hasMore = brandVehicles.length > currentLimit
           const remaining = brandVehicles.length - currentLimit
+          const normBrand = normalizeBrandName(brandName)
+          const isBrandHidden = hiddenBrands.includes(normBrand)
 
           return (
-            <div key={brandName} className="card overflow-hidden">
+            <div key={brandName} className={`card overflow-hidden transition-all duration-200 ${
+              isBrandHidden ? 'opacity-40 grayscale contrast-75 bg-[#0e1017] border-[#252836]' : ''
+            }`}>
               <div
                 onClick={() => toggleBrandCollapse(brandName)}
                 className="px-5 py-4 flex items-center justify-between cursor-pointer select-none transition-colors hover:bg-[#1A1D28]"
@@ -398,7 +526,25 @@ export function StockTable({ vehicles }: Props) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 sm:gap-3">
+                  {/* Botón minimalista '-' para Administrador: sin texto, oculta/habilita la marca */}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleHideBrand(brandName)
+                      }}
+                      title={isBrandHidden ? "Habilitar marca" : "Ocultar marca"}
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer font-black text-base select-none border ${
+                        isBrandHidden
+                          ? 'bg-white/20 hover:bg-white/30 text-white border-white/40'
+                          : 'bg-[#1E2235] hover:bg-[#2A2F45] text-[#9CA3AF] hover:text-white border-[#2D334D]'
+                      }`}>
+                      <span className="leading-none pb-0.5">-</span>
+                    </button>
+                  )}
+
                   <span className="text-xs sm:text-sm font-extrabold px-3 py-1 rounded-full"
                     style={{ background: '#FFFFFF15', color: '#FFFFFF', border: '1px solid #FFFFFF30' }}>
                     {brandVehicles.length} autos
@@ -411,18 +557,25 @@ export function StockTable({ vehicles }: Props) {
                 <div className="p-4 bg-[#0F1117]">
                   {viewMode === 'grid' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {visibleVehicles.map(v => (
-                        <VehicleInteractiveCard
-                          key={v.ID}
-                          vehicle={v}
-                          loadingId={loadingId}
-                          onSelectVehicle={setSelectedVehicle}
-                          onPublishVehicle={setPublishingVehicle}
-                          onManageVehicle={setManagingVehicle}
-                          onOpenCrm={setCrmVehicle}
-                          onUpdateVehicle={handleUpdateVehicle}
-                        />
-                      ))}
+                      {visibleVehicles.map(v => {
+                        const isCarHidden = hiddenVehicles.includes(String(v.ID))
+                        return (
+                          <VehicleInteractiveCard
+                            key={v.ID}
+                            vehicle={v}
+                            loadingId={loadingId}
+                            isAdmin={isAdmin}
+                            isCarHidden={isCarHidden || isBrandHidden}
+                            isSpecificallyHidden={isCarHidden}
+                            onToggleVisibility={() => toggleHideVehicle(v.ID)}
+                            onSelectVehicle={setSelectedVehicle}
+                            onPublishVehicle={setPublishingVehicle}
+                            onManageVehicle={setManagingVehicle}
+                            onOpenCrm={setCrmVehicle}
+                            onUpdateVehicle={handleUpdateVehicle}
+                          />
+                        )
+                      })}
                     </div>
                   ) : (
                     <div className="overflow-x-auto rounded-xl border border-[#1F2337] bg-[#0A0C13]">
@@ -452,9 +605,13 @@ export function StockTable({ vehicles }: Props) {
                           {visibleVehicles.map(v => {
                             const coverImg = getVehicleCoverImage(v)
                             const isOkm = (v.Tipo_Vehiculo || '').toLowerCase() === '0km'
+                            const isCarHidden = hiddenVehicles.includes(String(v.ID))
+                            const isRowHidden = isCarHidden || isBrandHidden
 
                             return (
-                              <tr key={v.ID} className="border-b border-[#1F2337]/60 hover:bg-[#1A1D28] transition-colors">
+                              <tr key={v.ID} className={`border-b border-[#1F2337]/60 transition-colors ${
+                                isRowHidden ? 'opacity-40 grayscale contrast-75 bg-[#0D0F15]' : 'hover:bg-[#1A1D28]'
+                              }`}>
                                 {/* Columna Vehículo */}
                                 <td className="px-5 py-3.5">
                                   <div
@@ -524,6 +681,20 @@ export function StockTable({ vehicles }: Props) {
                                 {/* Columna Acciones */}
                                 <td className="px-5 py-3.5 text-right">
                                   <div className="flex items-center justify-end gap-1.5">
+                                    {/* Botón minimalista '-' para Administrador en tabla: sin texto */}
+                                    {isAdmin && (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleHideVehicle(v.ID)}
+                                        title={isCarHidden ? "Habilitar auto" : "Ocultar auto"}
+                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer font-black text-base select-none border ${
+                                          isCarHidden
+                                            ? 'bg-white/20 hover:bg-white/30 text-white border-white/40'
+                                            : 'bg-[#141824] hover:bg-[#1F2337] border-[#252A3D] text-[#A0A5BD] hover:text-white'
+                                        }`}>
+                                        <span className="leading-none pb-0.5">-</span>
+                                      </button>
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => setManagingVehicle(v)}
@@ -589,6 +760,10 @@ export function StockTable({ vehicles }: Props) {
 function VehicleInteractiveCard({
   vehicle: v,
   loadingId,
+  isAdmin,
+  isCarHidden,
+  isSpecificallyHidden,
+  onToggleVisibility,
   onSelectVehicle,
   onPublishVehicle,
   onManageVehicle,
@@ -598,6 +773,10 @@ function VehicleInteractiveCard({
 }: {
   vehicle: Vehicle
   loadingId: string | null
+  isAdmin?: boolean
+  isCarHidden?: boolean
+  isSpecificallyHidden?: boolean
+  onToggleVisibility?: () => void
   onSelectVehicle: (v: Vehicle) => void
   onPublishVehicle: (v: Vehicle) => void
   onManageVehicle: (v: Vehicle) => void
@@ -657,8 +836,12 @@ function VehicleInteractiveCard({
 
   return (
     <div
-      className="card group overflow-hidden flex flex-col transition-all duration-200 hover:border-[#FACC1580] hover:shadow-xl relative"
-      style={{ opacity: loadingId === v.ID ? 0.5 : 1, background: '#13161F', border: '1px solid #1F2337' }}>
+      className={`card group overflow-hidden flex flex-col transition-all duration-200 relative ${
+        isCarHidden
+          ? 'opacity-40 grayscale contrast-75 bg-[#0D0F15] border-[#2A2F45]'
+          : 'hover:border-[#FACC1580] hover:shadow-xl bg-[#13161F] border-[#1F2337]'
+      }`}
+      style={{ opacity: loadingId === v.ID ? 0.5 : (isCarHidden ? 0.4 : 1) }}>
 
       {/* Saving / Saved Toast Indicator */}
       {(autoSaving || savedSuccess) && (
@@ -688,6 +871,24 @@ function VehicleInteractiveCard({
             <Car size={36} />
             <span className="text-[10px]">Sin foto</span>
           </div>
+        )}
+
+        {/* Botón minimalista '-' para Administrador en tarjeta: sin texto */}
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleVisibility?.()
+            }}
+            title={isSpecificallyHidden ? "Habilitar auto" : "Ocultar auto"}
+            className={`absolute top-2.5 ${isOkm ? 'left-24' : 'left-2.5'} z-30 w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer font-black text-base select-none backdrop-blur-md shadow-md border ${
+              isSpecificallyHidden
+                ? 'bg-white/20 hover:bg-white/30 text-white border-white/40'
+                : 'bg-[#000000b0] hover:bg-[#000000] text-[#CBD5E1] hover:text-white border-white/20'
+            }`}>
+            <span className="leading-none pb-0.5">-</span>
+          </button>
         )}
 
         {/* 0KM Tag ONLY if applicable */}

@@ -32,6 +32,7 @@ interface Props {
   onDeleteTemplate?: (id: string) => void
   onInsertVariable?: (tag: string) => void
   targetPlatform?: string | null
+  onlyPreview?: boolean
 }
 
 const DEFAULT_TEMPLATE_IMAGE = '/templates/plantilla_publicidad_okm.png?v=6'
@@ -178,7 +179,8 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     updatedTemplateSuccess,
     onDeleteTemplate,
     onInsertVariable,
-    targetPlatform
+    targetPlatform,
+    onlyPreview
   } = props
   const [templateImage, setTemplateImage] = useState<string>(props.templateImage || DEFAULT_TEMPLATE_IMAGE)
   const [copiedImage, setCopiedImage] = useState(false)
@@ -794,11 +796,8 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     </>
   )
 
-  return (
-    <div className="flex flex-col lg:flex-row items-stretch justify-center gap-5 w-full py-1">
-      
-      {/* LEFT: FLYER DISPLAY WITH PIXEL-PERFECT IN-PLACE EDITABLE BOXES */}
-      <div className="flex flex-col items-center gap-2 flex-shrink-0 mx-auto">
+  const flyerPreviewElement = (
+    <div className="flex flex-col items-center gap-2 flex-shrink-0 mx-auto">
         
         {/* Dynamic Container according to Aspect Ratio */}
         {aspectRatio === '1:1' ? (
@@ -907,6 +906,15 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
           />
         </div>
       </div>
+    )
+
+  if (onlyPreview) {
+    return flyerPreviewElement
+  }
+
+  return (
+    <div className="flex flex-col lg:flex-row items-stretch justify-center gap-5 w-full py-1">
+      {flyerPreviewElement}
 
       {/* RIGHT: CUADRO CON EL TEXTO PLANTILLA QUE IRÁ EN LA PUBLICACIÓN */}
       <div className="flex-1 flex flex-col gap-3 min-w-[320px] w-full bg-[#13161F] p-4 sm:p-5 rounded-xl border border-[#1F2337] h-[540px] overflow-hidden">

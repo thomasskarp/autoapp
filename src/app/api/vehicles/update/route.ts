@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { updateVehicleInCache } from '@/lib/services/vehicles-service'
 
+const ALLOWED_VEHICLE_FIELDS = new Set([
+  'Marca', 'marca', 'Modelo', 'modelo', 'Version', 'version',
+  'Año', 'Anio', 'anio', 'Precio_Venta', 'Precio_entrega',
+  'Km', 'km', 'kms', 'Estado', 'estado', 'Tipo_Combustible', 'combustible',
+  'Transmision', 'transmision', 'Tipo_Carroceria', 'Estado_Vehiculo',
+  'Tipo_Vehiculo', 'Descripcion', 'descripcion', 'FOTO_PORTADA', 'FOTOS_EXTRA',
+  'photoLinks', 'Moneda', 'Patente', 'Color', 'agency_id'
+])
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -12,6 +21,18 @@ export async function POST(req: NextRequest) {
         { error: 'ID del vehículo y campos a actualizar son requeridos' },
         { status: 400 }
       )
+    }
+
+    // Filtrar únicamente campos permitidos para prevenir inyecciones o alteración de columnas no autorizadas
+    const sanitizedFields: Record<string, any> = {}
+    for (const [key, val] of Object.entries(fields)) {
+      if (ALLOWED_VEHICLE_FIELDS.has(key)) {
+        sanitizedFields[key] = val
+      }
+    }
+
+    if (Object.keys(sanitizedFields).length === 0) {
+      return NextResponse.json({ error: 'No se enviaron campos válidos para actualizar' }, { status: 400 })
     }
 
     const supabase = createAdminClient()

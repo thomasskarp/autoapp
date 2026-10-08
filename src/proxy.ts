@@ -59,12 +59,6 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (isAuthenticated && isAuthRoute) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/'
-    return NextResponse.redirect(url)
-  }
-
   return supabaseResponse
 }
 

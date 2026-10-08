@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Car, Loader2, Eye, EyeOff } from 'lucide-react'
 
@@ -12,6 +12,12 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
 
   const supabase = createClient()
+
+  useEffect(() => {
+    // Al entrar a /login, limpiar cualquier sesión o cookie anterior para permitir ingresar limpio
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    supabase.auth.signOut().catch(() => {})
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()

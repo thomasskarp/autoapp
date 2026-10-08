@@ -32,6 +32,15 @@ const VideoReelModal = dynamic(
   { ssr: false }
 )
 import {
+  VehiclePhotoBook,
+  getVehicleBooks,
+  saveVehicleBooks
+} from './vehicle-media-books'
+import {
+  PhotoBookPreview,
+  BookUploadModal
+} from './media-previews'
+import {
   compileDefaultAdData,
   formatAdDataToText,
   parseTextToAdData,
@@ -50,14 +59,7 @@ import {
   formatAllCuotasBulletList
 } from '@/lib/services/circular-service'
 
-export type ContentType = 'fotos' | 'reel' | 'publicidad' | 'video'
-
-const CONTENT_TYPE_OPTIONS: { id: ContentType; label: string; icon: any }[] = [
-  { id: 'fotos', label: 'Fotos', icon: ImageIcon },
-  { id: 'reel', label: 'Reel', icon: Film },
-  { id: 'publicidad', label: 'Publicidad', icon: Megaphone },
-  { id: 'video', label: 'Video', icon: Video },
-]
+export type ContentType = 'fotos' | 'reel_video' | 'publicidad'
 
 export type TargetPlatform =
   | 'FB_MARKETPLACE'
@@ -69,6 +71,42 @@ export type TargetPlatform =
   | 'TIKTOK'
   | 'WA'
   | 'MELI'
+
+export const PLATFORMS_BY_CONTENT_TYPE: Record<ContentType, TargetPlatform[]> = {
+  fotos: [
+    'FB_MARKETPLACE',
+    'FB_PAGE',
+    'IG',
+    'IG_STORY',
+    'WA',
+    'MELI'
+  ],
+  reel_video: [
+    'FB_PAGE',
+    'FB_REEL',
+    'IG',
+    'IG_REEL',
+    'IG_STORY',
+    'TIKTOK',
+    'WA'
+  ],
+  publicidad: [
+    'FB_MARKETPLACE',
+    'FB_PAGE',
+    'FB_REEL',
+    'IG',
+    'IG_REEL',
+    'IG_STORY',
+    'TIKTOK',
+    'WA'
+  ]
+}
+
+const CONTENT_TYPE_OPTIONS: { id: ContentType; label: string; icon: any }[] = [
+  { id: 'fotos', label: 'Fotos', icon: ImageIcon },
+  { id: 'reel_video', label: 'Reel / Video', icon: Film },
+  { id: 'publicidad', label: 'Publicidad', icon: Megaphone },
+]
 
 interface Props {
   vehicle: Vehicle | null
@@ -524,7 +562,15 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
   const adFlyerRef = useRef<AdFlyerPreviewHandle | null>(null)
   const videoReelRef = useRef<VideoReelModalHandle | null>(null)
 
-  // Publicidades state (loaded flyer templates associated to models)
+  // Photo Books State
+  const [books, setBooks] = useState<VehiclePhotoBook[]>([])
+  const [selectedBookId, setSelectedBookId] = useState<string>('')
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState<number>(0)
+  const [showBookUploadModal, setShowBookUploadModal] = useState<boolean>(false)
+
+  const currentBook = books.find(b => b.id === selectedBookId) || books[0] || null
+  const currentBookPhotos = currentBook?.photos || allPhotos || []
+  const currentPhoto = currentBookPhotos[currentPhotoIndex] || currentBookPhotos[0] || ''
   const [publicidades, setPublicidades] = useState<AdPublicidadTemplate[]>(DEFAULT_PUBLICIDADES)
   const [selectedPublicidadId, setSelectedPublicidadId] = useState<string>('')
 
@@ -565,19 +611,109 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
 
   const currentPublicidad = availablePublicidades.find(p => p.id === selectedPublicidadId) || availablePublicidades[0] || null
 
-  // Handler for switching content type (Fotos, Reel, Publicidad, Video)
+  // Handler for switching content type (Fotos, Reel / Video, Publicidad)
   const handleSelectContentType = (type: ContentType) => {
     setContentType(type)
-    if (type !== 'publicidad') {
-      // En Fotos, Reel, Video: restauramos fotos si estaba vacío
-      if (selectedPhotos.length === 0 && allPhotos.length > 0) {
+
+    // Sincronizar plataforma si la actual no está permitida para este tipo de contenido
+    const allowed = PLATFORMS_BY_CONTENT_TYPE[type]
+    if (!allowed.includes(targetPlatform)) {
+      const fallback = type === 'reel_video'
+        ? (allowed.includes('IG_REEL') ? 'IG_REEL' : allowed[0])
+        : allowed[0]
+      handleSwitchPlatform(fallback)
+    }
+
+    if (type === 'fotos') {
+      if (currentBook) {
+        setSelectedPhotos(currentBook.photos)
+      } else if (allPhotos.length > 0) {
+        setSelectedPhotos([...allPhotos])
+      }
+    } else if (type === 'publicidad') {
+      const initialPortada = allPhotos[0] || ''
+      setSelectedPhotos(initialPortada ? [initialPortada] : [])
+    } else {
+      // En Reel / Video: sincronizamos fotos del book activo
+      if (currentBook) {
+        setSelectedPhotos(currentBook.photos)
+      } else if (selectedPhotos.length === 0 && allPhotos.length > 0) {
         setSelectedPhotos([...allPhotos])
       }
     }
+
     // Requisito: "el texto se mantiene igual" - solo compilar si estaba vacío
     if (!customText.trim()) {
-      const foundTemplate = visibleTemplates.find(t => t.id === selectedTemplateId) || visibleTemplates[0] || DEFAULT_TEMPLATES[0]
+      let tid = selectedTemplateId
+      if (type === 'reel_video') tid = 'default-reel'
+      const foundTemplate = visibleTemplates.find(t => t.id === tid) || visibleTemplates[0] || DEFAULT_TEMPLATES[0]
       setCustomText(compileTemplate(foundTemplate.content, vehicle))
+    }
+  }
+
+  const handleSelectBook = (book: VehiclePhotoBook) => {
+    setSelectedBookId(book.id)
+    setSelectedPhotos(book.photos)
+    setCurrentPhotoIndex(0)
+  }
+
+  const handleDeleteBook = (bookId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm('¿Seguro que querés eliminar este book de fotos?')) return
+    const updated = books.filter(b => b.id !== bookId)
+    setBooks(updated)
+    saveVehicleBooks(vehicle?.ID || '', updated)
+    if (selectedBookId === bookId && updated.length > 0) {
+      setSelectedBookId(updated[0].id)
+      setSelectedPhotos(updated[0].photos)
+      setCurrentPhotoIndex(0)
+    }
+  }
+
+  const handleCreateNewBook = (newBookData: { name: string; photos: string[] }) => {
+    if (!vehicle) return
+    const newBook: VehiclePhotoBook = {
+      id: `book-${Date.now()}`,
+      vehicleId: vehicle.ID,
+      name: newBookData.name,
+      photos: newBookData.photos,
+      coverPhoto: newBookData.photos[0] || '',
+      createdAt: new Date().toISOString()
+    }
+    const updated = [...books, newBook]
+    setBooks(updated)
+    saveVehicleBooks(vehicle.ID, updated)
+    setSelectedBookId(newBook.id)
+    setSelectedPhotos(newBook.photos)
+    setCurrentPhotoIndex(0)
+  }
+
+  const handleAddPhotosToActiveBook = async (files: FileList | File[]) => {
+    if (!vehicle || !currentBook) return
+    try {
+      const list = Array.from(files)
+      const uploadedUrls: string[] = []
+      for (const file of list) {
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('folder', 'books')
+        fd.append('vehicleId', vehicle.ID || 'vehicle')
+        const res = await fetch('/api/media/upload-video', { method: 'POST', body: fd })
+        const data = await res.json()
+        if (data.success && data.publicUrl) {
+          uploadedUrls.push(data.publicUrl)
+        }
+      }
+
+      if (uploadedUrls.length > 0) {
+        const updatedPhotos = [...currentBook.photos, ...uploadedUrls]
+        const updatedBooks = books.map(b => b.id === currentBook.id ? { ...b, photos: updatedPhotos } : b)
+        setBooks(updatedBooks)
+        saveVehicleBooks(vehicle.ID, updatedBooks)
+        setSelectedPhotos(updatedPhotos)
+      }
+    } catch (e) {
+      console.error('Error adding photos to active book:', e)
     }
   }
 
@@ -786,34 +922,45 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
   useEffect(() => {
     if (vehicle) {
       let p: TargetPlatform = 'FB_MARKETPLACE'
+      let initialType: ContentType = 'fotos'
+
       if (initialPlatform) {
         const norm = initialPlatform.toUpperCase()
         if (norm === 'FB_MARKETPLACE' || norm === 'FB') p = 'FB_MARKETPLACE'
         else if (norm === 'FB_PAGE') p = 'FB_PAGE'
-        else if (norm === 'FB_REEL') p = 'FB_REEL'
+        else if (norm === 'FB_REEL') { p = 'FB_REEL'; initialType = 'reel_video' }
         else if (norm === 'IG') p = 'IG'
-        else if (norm === 'IG_REEL') p = 'IG_REEL'
+        else if (norm === 'IG_REEL') { p = 'IG_REEL'; initialType = 'reel_video' }
         else if (norm === 'IG_STORY') p = 'IG_STORY'
-        else if (norm === 'TIKTOK' || norm === 'TT') p = 'TIKTOK'
-        else if (norm === 'WA' || norm === 'WA_MOBILE') p = 'WA'
+        else if (norm === 'TIKTOK' || norm === 'TT') { p = 'TIKTOK'; initialType = 'reel_video' }
+        else if (norm === 'WA' || norm === 'WA_MOBILE') { p = 'WA'; initialType = 'publicidad' }
         else if (norm === 'MELI') p = 'MELI'
       }
       setTargetPlatform(p)
+      setContentType(initialType)
 
       // Photos: pre-select ALL photos by default (or only 1 photo if Publicidad is active)
       const photos = getAllVehiclePhotos(vehicle)
       setAllPhotos(photos)
+
+      // Load Books
+      const loadedBooks = getVehicleBooks(vehicle.ID, photos)
+      setBooks(loadedBooks)
+      const initialBook = loadedBooks[0] || null
+      if (initialBook) {
+        setSelectedBookId(initialBook.id)
+      }
 
       const initialPortada = photos[0] || ''
       const defaultAd = compileDefaultAdData(vehicle, initialPortada)
       setAdData(defaultAd)
       setPortadaIndex(0)
 
-      if (contentType === 'publicidad') {
+      if (initialType === 'publicidad') {
         setSelectedPhotos(initialPortada ? [initialPortada] : [])
         setCustomText(formatAdDataToText(defaultAd))
       } else {
-        setSelectedPhotos(photos)
+        setSelectedPhotos(initialBook ? initialBook.photos : photos)
         if (p === 'WA') {
           setCustomText(compileWhatsAppStatusText(vehicle))
         } else if (p === 'TIKTOK') {
@@ -895,10 +1042,6 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
     setTargetPlatform(platform)
     setCompletedPlatform(null)
     setStatusMsg(null)
-
-    if (platform === 'FB_REEL' || platform === 'IG_REEL') {
-      setContentType('reel')
-    }
 
     // Si el usuario ya tiene texto editado o preparado, lo mantenemos intacto para no pisarlo
     if (!customText.trim()) {
@@ -1179,7 +1322,7 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
 
   // Execute publication to chosen target platform
   const handleExecutePublish = async () => {
-    if (contentType === 'reel' || contentType === 'video' || targetPlatform === 'FB_REEL' || targetPlatform === 'IG_REEL') {
+    if (contentType === 'reel_video') {
       if (videoReelRef.current) {
         let dest: PublishDestination | undefined = undefined
         if (targetPlatform === 'FB_PAGE' || targetPlatform === 'FB_REEL' || targetPlatform === 'FB_MARKETPLACE') {
@@ -1279,7 +1422,7 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
       } else if (targetPlatform === 'IG_REEL') {
         setShowReelStudio(true)
       } else if (targetPlatform === 'IG_STORY') {
-        if (contentType === 'reel' || contentType === 'video') {
+        if (contentType === 'reel_video') {
           setShowReelStudio(true)
         } else {
           let storyImageUrl = flyerPublicUrl || targetV.FOTO_PORTADA || selectedPhotos[0]
@@ -1312,7 +1455,7 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
           alert('¡Historia publicada con éxito en Instagram Oficial (@okmmotors)!')
         }
       } else if (targetPlatform === 'TIKTOK') {
-        if (contentType === 'reel' || contentType === 'video') {
+        if (contentType === 'reel_video') {
           setShowReelStudio(true)
         } else {
           setStatusMsg('Iniciando publicación en TikTok...')
@@ -1365,17 +1508,7 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
         {/* Modal Top Header Bar with Platform Selector */}
         <div className="px-5 py-3 bg-[#13161F] border-b border-[#1F2337] flex items-center justify-between gap-4 flex-shrink-0">
           <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar py-0.5">
-            {([
-              'FB_MARKETPLACE',
-              'FB_PAGE',
-              'FB_REEL',
-              'IG',
-              'IG_REEL',
-              'IG_STORY',
-              'TIKTOK',
-              'WA',
-              'MELI'
-            ] as TargetPlatform[]).map(platform => {
+            {PLATFORMS_BY_CONTENT_TYPE[contentType].map(platform => {
               const meta = PLATFORMS_META[platform]
               const isActive = targetPlatform === platform
               return (
@@ -1438,16 +1571,109 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                         color: targetPlatform === 'MELI' ? '#000000' : '#FFFFFF'
                       } : undefined}>
                       <Icon size={14} className={isSelected ? (targetPlatform === 'MELI' ? 'text-black' : 'text-white') : 'text-[#8B8FA8]'} />
-                      <span className="capitalize">{opt.label}</span>
+                      <span>{opt.label}</span>
                     </button>
                   )
                 })}
               </div>
 
-              {contentType === 'publicidad' ? (
-                /* PUBLICIDADES (FLYER TEMPLATES ASOCIADAS A MODELOS) */
-                <div className="flex flex-col gap-3">
-                  {/* Publicidades Horizontal Scroll Row */}
+              {/* BOOKS DE FOTOS ROW (UNIFICADO PARA FOTOS, REEL, VIDEO Y PUBLICIDAD) */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between px-0.5">
+                  <span className="text-[11px] font-bold text-[#8B8FA8] uppercase tracking-wider flex items-center gap-1.5">
+                    <ImageIcon size={12} className="text-[#38BDF8]" /> Books de Fotos del Auto
+                  </span>
+                  <span className="text-[11px] text-[#64748B]">
+                    {books.length} {books.length === 1 ? 'book disponible' : 'books disponibles'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3 overflow-x-auto py-1 custom-scrollbar">
+                  {books.map((book) => {
+                    const isSelected = selectedBookId === book.id
+                    const cover = book.coverPhoto || book.photos[0]
+
+                    return (
+                      <div
+                        key={book.id}
+                        onClick={() => handleSelectBook(book)}
+                        className={`relative w-44 h-28 rounded-xl flex-shrink-0 overflow-hidden cursor-pointer group transition-all border flex flex-col justify-between p-2.5 ${
+                          isSelected
+                            ? 'ring-2 shadow-lg scale-[1.02]'
+                            : 'border-[#1F2337] bg-[#0E121B] opacity-80 hover:opacity-100 hover:border-[#334155]'
+                        }`}
+                        style={isSelected ? {
+                          borderColor: activeMeta.color || '#38BDF8',
+                          boxShadow: `0 0 15px ${activeMeta.color || '#38BDF8'}30`,
+                          backgroundColor: '#141A28'
+                        } : undefined}>
+
+                        {cover && (
+                          <img
+                            src={cover}
+                            alt={book.name}
+                            className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-100 pointer-events-none group-hover:scale-105 transition-all"
+                            onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none' }}
+                          />
+                        )}
+
+                        <div className="relative z-10 flex items-center justify-between w-full">
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${
+                                isSelected ? 'font-black' : 'bg-black/60 text-white/40 border border-white/20'
+                              }`}
+                              style={isSelected ? {
+                                background: activeMeta.bg || '#38BDF8',
+                                color: targetPlatform === 'MELI' ? '#000000' : '#FFFFFF'
+                              } : undefined}>
+                              {isSelected ? <Check size={13} strokeWidth={3} /> : null}
+                            </div>
+                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#FACC15] text-black shadow-sm flex items-center gap-1">
+                              <ImageIcon size={9} /> {book.photos.length} FOTOS
+                            </span>
+                          </div>
+
+                          {!book.isDefault && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteBook(book.id, e)}
+                              title="Eliminar este book"
+                              className="p-1 rounded bg-black/70 hover:bg-[#EF4444] text-white transition-colors opacity-0 group-hover:opacity-100">
+                              <Trash2 size={11} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="relative z-10 bg-black/75 -mx-2.5 -mb-2.5 px-2.5 py-1.5 backdrop-blur-sm border-t border-white/10">
+                          <p className="text-xs font-bold text-white truncate">{book.name}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {/* Add New Book Card */}
+                  <div
+                    onClick={() => setShowBookUploadModal(true)}
+                    className="w-32 h-28 rounded-xl flex-shrink-0 border-2 border-dashed border-[#2A334B] hover:border-[#38BDF8] bg-[#0E121B]/50 hover:bg-[#141A28] flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all text-[#8B8FA8] hover:text-[#38BDF8] group">
+                    <Plus size={20} className="group-hover:scale-110 transition-transform text-[#38BDF8]" />
+                    <span className="text-[11px] font-bold text-center leading-tight">Cargar nuevo<br/>book</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Si es Publicidad, mostramos además los diseños de flyer disponibles con el mismo formato */}
+              {contentType === 'publicidad' && (
+                <div className="flex flex-col gap-2 pt-2 border-t border-[#1F2337]/60">
+                  <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[11px] font-bold text-[#8B8FA8] uppercase tracking-wider flex items-center gap-1.5">
+                      <Megaphone size={12} className="text-[#38BDF8]" /> Diseños de Flyer Publicitario
+                    </span>
+                    <span className="text-[11px] text-[#64748B]">
+                      {availablePublicidades.length} {availablePublicidades.length === 1 ? 'diseño' : 'diseños'}
+                    </span>
+                  </div>
+
                   <div className="flex items-center gap-3 overflow-x-auto py-1 custom-scrollbar">
                     {availablePublicidades.map((pub) => {
                       const isSelected = selectedPublicidadId === pub.id
@@ -1456,7 +1682,7 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                         <div
                           key={pub.id}
                           onClick={() => handleSelectPublicidad(pub)}
-                          className={`relative w-48 h-32 rounded-xl flex-shrink-0 overflow-hidden cursor-pointer group transition-all border flex flex-col justify-between p-2.5 ${
+                          className={`relative w-44 h-28 rounded-xl flex-shrink-0 overflow-hidden cursor-pointer group transition-all border flex flex-col justify-between p-2.5 ${
                             isSelected
                               ? 'ring-2 shadow-lg scale-[1.02]'
                               : 'border-[#1F2337] bg-[#0E121B] opacity-80 hover:opacity-100 hover:border-[#334155]'
@@ -1467,7 +1693,6 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                             backgroundColor: '#141A28'
                           } : undefined}>
                           
-                          {/* Background thumbnail */}
                           {pub.imageUrl && (
                             <img
                               src={pub.imageUrl}
@@ -1477,7 +1702,6 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                             />
                           )}
 
-                          {/* Top row: Checkbox + Badges & Actions */}
                           <div className="relative z-10 flex items-center justify-between w-full">
                             <div className="flex items-center gap-1.5">
                               <div
@@ -1490,11 +1714,9 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                                 } : undefined}>
                                 {isSelected ? <Check size={13} strokeWidth={3} /> : null}
                               </div>
-                              {pub.only0km && (
-                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#FACC15] text-black shadow-sm">
-                                  0KM
-                                </span>
-                              )}
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#38BDF8] text-black shadow-sm flex items-center gap-1">
+                                <Megaphone size={9} /> {pub.only0km ? '0KM' : 'FLYER'}
+                              </span>
                             </div>
 
                             <div className="flex items-center gap-1">
@@ -1522,6 +1744,10 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                               )}
                             </div>
                           </div>
+
+                          <div className="relative z-10 bg-black/75 -mx-2.5 -mb-2.5 px-2.5 py-1.5 backdrop-blur-sm border-t border-white/10">
+                            <p className="text-xs font-bold text-white truncate">{pub.name}</p>
+                          </div>
                         </div>
                       )
                     })}
@@ -1536,74 +1762,16 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                         setNewPubOnly0km(false)
                         setShowUploadModal(true)
                       }}
-                      className="w-36 h-32 rounded-xl flex-shrink-0 border-2 border-dashed border-[#2A334B] hover:border-[#38BDF8] bg-[#0E121B]/50 hover:bg-[#141A28] flex flex-col items-center justify-center gap-2 cursor-pointer transition-all text-[#8B8FA8] hover:text-[#38BDF8] group">
-                      <Plus size={22} className="group-hover:scale-110 transition-transform text-[#38BDF8]" />
+                      className="w-32 h-28 rounded-xl flex-shrink-0 border-2 border-dashed border-[#2A334B] hover:border-[#38BDF8] bg-[#0E121B]/50 hover:bg-[#141A28] flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all text-[#8B8FA8] hover:text-[#38BDF8] group">
+                      <Plus size={20} className="group-hover:scale-110 transition-transform text-[#38BDF8]" />
                       <span className="text-[11px] font-bold text-center leading-tight">Cargar nueva<br/>publicidad</span>
                     </div>
                   </div>
                 </div>
-              ) : (
-                /* REGULAR PHOTOS SELECTION FOR FOTOS / REEL / VIDEO */
-                <>
-                  {/* Photos Horizontal Scroll Row */}
-                  <div className="flex items-center gap-3 overflow-x-auto py-1 custom-scrollbar">
-                    {allPhotos.map((url, idx) => {
-                      const isSelected = selectedPhotos.includes(url)
-                      const isPortada = idx === 0
-
-                      return (
-                        <div
-                          key={url}
-                          onClick={() => togglePhoto(url)}
-                          className={`relative w-32 h-22 sm:w-36 sm:h-24 rounded-xl flex-shrink-0 overflow-hidden cursor-pointer group transition-all border ${
-                            isSelected
-                              ? 'shadow-md ring-2'
-                              : 'border-[#1F2337] opacity-40 hover:opacity-100 hover:scale-[1.02]'
-                          }`}
-                          style={isSelected ? {
-                            borderColor: activeMeta.color || '#22C55E',
-                            boxShadow: `0 0 12px ${activeMeta.color || '#22C55E'}30`
-                          } : undefined}>
-                          <img
-                            src={url}
-                            alt={`Foto ${idx + 1}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                            onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none' }}
-                          />
-
-                          {/* Selection Checkbox Overlay */}
-                          <div
-                            className={`absolute top-1.5 left-1.5 w-5 h-5 rounded-md flex items-center justify-center transition-all ${
-                              isSelected ? 'text-white shadow-sm' : 'bg-black/60 text-white/40 border border-white/30'
-                            }`}
-                            style={isSelected ? {
-                              background: activeMeta.bg || '#22C55E',
-                              color: targetPlatform === 'MELI' ? '#000' : '#fff'
-                            } : undefined}>
-                            {isSelected ? <Check size={13} strokeWidth={3} /> : null}
-                          </div>
-
-                          {/* Portada Badge */}
-                          {isPortada && (
-                            <span className="absolute bottom-1 left-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-[#FACC15] text-black shadow-md flex items-center gap-1 border border-[#FACC15]">
-                              <Star size={10} fill="currentColor" /> PORTADA
-                            </span>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {selectedPhotos.length === 0 && (
-                    <p className="text-[11px] font-bold text-[#EF4444] bg-[#EF444410] p-1.5 rounded-lg border border-[#EF444430] text-center">
-                      ⚠️ Tenés que seleccionar al menos 1 foto para publicar.
-                    </p>
-                  )}
-                </>
               )}
 
-              {/* INLINE REEL STUDIO (WHEN REEL OR VIDEO IS ACTIVE) */}
-              {(contentType === 'reel' || contentType === 'video') && (
+              {/* INLINE REEL & VIDEO STUDIO (WHEN REEL / VIDEO IS ACTIVE) */}
+              {contentType === 'reel_video' && (
                 <div className="mt-3 pt-4 border-t border-[#1F2337] w-full">
                   <VideoReelModal
                     ref={videoReelRef}
@@ -1670,118 +1838,151 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                   )}
                 </div>
               )}
+
+              {/* LIVE PHOTO BOOK PREVIEW & PUBLICATION TEXT (WHEN FOTOS IS ACTIVE) */}
+              {contentType === 'fotos' && (
+                <div className="mt-3 pt-4 border-t border-[#1F2337] w-full">
+                  <div className="flex flex-col lg:flex-row items-stretch justify-center gap-5 w-full py-1">
+                    {/* Columna Izquierda: Preview de Fotos / Book */}
+                    <PhotoBookPreview
+                      currentPhoto={currentPhoto}
+                      photos={currentBookPhotos}
+                      currentPhotoIndex={currentPhotoIndex}
+                      onSelectIndex={setCurrentPhotoIndex}
+                      onAddPhotos={handleAddPhotosToActiveBook}
+                      targetPlatform={targetPlatform}
+                    />
+
+                    {/* Columna Derecha: Editor de Texto y Plantillas (Mismo tamaño y formato que Publicidad) */}
+                    <div className="flex-1 flex flex-col gap-3 min-w-[320px] w-full bg-[#13161F] p-4 sm:p-5 rounded-xl border border-[#1F2337] h-[540px] overflow-hidden">
+                      {/* Top Header & Toolbar */}
+                      <div className="flex flex-wrap items-center justify-between gap-2.5 flex-shrink-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Templates Dropdown */}
+                          <div className="relative inline-block">
+                            <select
+                              value={selectedTemplateId}
+                              onChange={e => handleSelectTemplate(e.target.value)}
+                              className="bg-[#0B0D13] border border-[#2A2F45] focus:border-[#FACC15] rounded-xl px-3 py-1.5 text-xs sm:text-sm font-bold text-[#FACC15] focus:outline-none cursor-pointer pr-8 appearance-none">
+                              {visibleTemplates.map(t => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name} {t.isDefault ? '(Por Defecto)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown size={14} className="absolute right-2.5 top-2.5 text-[#FACC15] pointer-events-none" />
+                          </div>
+
+                          {/* Borrar Plantilla */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteTemplate(selectedTemplateId, e)}
+                            title="Borrar plantilla seleccionada"
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#EF4444] bg-[#EF444415] hover:bg-[#EF444425] border border-[#EF444430] transition-colors cursor-pointer flex items-center gap-1.5">
+                            <Trash2 size={13} />
+                            <span className="hidden sm:inline">Borrar</span>
+                          </button>
+
+                          {/* WhatsApp Texto Resumido */}
+                          {targetPlatform === 'WA' && (
+                            <button
+                              type="button"
+                              onClick={() => setCustomText(compileWhatsAppStatusText(vehicle))}
+                              title="Resetear texto al formato resumido de WhatsApp"
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-[#1F2337] hover:bg-[#2A2F45] text-[#86EFAC] border border-[#25D36640] transition-colors cursor-pointer flex items-center gap-1">
+                              <RefreshCw size={12} />
+                              <span>Resumido</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Action Toolbar */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Generar con IA */}
+                          <button
+                            type="button"
+                            onClick={handleGenerateAICopy}
+                            disabled={loadingAI}
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#8B5CF620] hover:bg-[#8B5CF635] text-[#C4B5FD] border border-[#8B5CF640] transition-colors cursor-pointer flex items-center gap-1.5">
+                            {loadingAI ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                            <span>{loadingAI ? 'Pensando...' : 'Generar con IA'}</span>
+                          </button>
+
+                          {/* Nueva Plantilla */}
+                          <button
+                            type="button"
+                            onClick={handleSaveAsNewTemplate}
+                            title="Guardar como una nueva plantilla separada"
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1F2337] hover:bg-[#2A2F45] text-[#E8EAED] border border-[#2A2F45] transition-colors cursor-pointer flex items-center gap-1.5">
+                            <Plus size={13} className="text-[#60A5FA]" />
+                            <span className="hidden sm:inline">Nueva</span>
+                          </button>
+
+                          {/* Copiar Texto */}
+                          <button
+                            type="button"
+                            onClick={handleCopyText}
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1F2337] hover:bg-[#2A2F45] text-white border border-[#2A2F45] transition-colors cursor-pointer flex items-center gap-1.5">
+                            {copiedText ? <CheckCircle2 size={13} className="text-green-400" /> : <Copy size={13} />}
+                            <span>{copiedText ? '¡Copiado!' : 'Copiar'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Variables dinámicas para insertar en la plantilla */}
+                      <div className="flex items-center gap-1.5 flex-wrap text-[11px] pt-1 border-t border-[#1F2337]/60 flex-shrink-0">
+                        <span className="text-[#8B8FA8] font-bold text-[10px] uppercase mr-1">Variables auto:</span>
+                        {[
+                          { tag: '{MARCA}', label: 'Marca' },
+                          { tag: '{MODELO}', label: 'Modelo' },
+                          { tag: '{VERSION}', label: 'Versión' },
+                          { tag: '{AÑO}', label: 'Año' },
+                          { tag: '{KM}', label: 'KM' },
+                          { tag: '{PRECIO}', label: 'Precio' },
+                          { tag: '{ENTREGA}', label: 'Anticipo' },
+                          { tag: '{CUOTAS}', label: 'Cuotas' },
+                          { tag: '{COMBUSTIBLE}', label: 'Combustible' },
+                          { tag: '{TRANSMISION}', label: 'Transmisión' },
+                          { tag: '{PATENTE}', label: 'Patente' },
+                        ].map(vTag => (
+                          <button
+                            key={vTag.tag}
+                            type="button"
+                            onClick={() => handleInsertVariable(vTag.tag)}
+                            title={`Insertar ${vTag.tag} en el texto`}
+                            className="px-2 py-0.5 rounded-md bg-[#0F1117] hover:bg-[#2563EB25] hover:text-[#60A5FA] border border-[#2A2F45] text-[#A0A5BD] font-mono text-[10px] transition-colors cursor-pointer">
+                            + {vTag.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Textarea */}
+                      <textarea
+                        ref={textareaRef}
+                        className="w-full flex-1 bg-[#0B0D13] border border-[#1F2337] focus:border-[#FACC15] rounded-xl p-4 text-xs sm:text-sm text-[#E8EAED] font-sans leading-relaxed resize-none focus:outline-none transition-colors custom-scrollbar"
+                        placeholder="Escribí o editá el texto comercial del vehículo que acompañará esta publicación..."
+                        value={customText}
+                        onChange={e => handleCustomTextChange(e.target.value)}
+                      />
+
+                      {/* Character counter */}
+                      <div className="flex items-center justify-end text-[11px] text-[#8B8FA8] px-1 flex-shrink-0">
+                        <span>{customText.length} caracteres</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
 
-            {/* Card 2: Plantillas System & Text Area (Shown for regular Photos view) */}
-            {contentType === 'fotos' && (
-              <div className="flex-1 flex flex-col gap-3 min-h-0 bg-[#13161F] p-4 sm:p-5 rounded-xl border border-[#1F2337] overflow-hidden">
-                <div className="flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    {/* Templates Dropdown */}
-                    <div className="relative inline-block">
-                      <select
-                        value={selectedTemplateId}
-                        onChange={e => handleSelectTemplate(e.target.value)}
-                        className="bg-[#0B0D13] border border-[#2A2F45] focus:border-[#FACC15] rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold text-[#FACC15] focus:outline-none cursor-pointer pr-9 appearance-none">
-                        {visibleTemplates.map(t => (
-                          <option key={t.id} value={t.id}>
-                            {t.name} {t.isDefault ? '(Por Defecto)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={15} className="absolute right-3 top-3 text-[#FACC15] pointer-events-none" />
-                    </div>
-
-                    {/* Botón para borrar la plantilla seleccionada */}
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteTemplate(selectedTemplateId, e)}
-                      title="Borrar la plantilla seleccionada"
-                      className="px-2.5 py-2 rounded-xl text-xs font-bold text-[#EF4444] bg-[#EF444415] hover:bg-[#EF444425] border border-[#EF444430] transition-colors cursor-pointer flex items-center gap-1.5">
-                      <Trash2 size={14} />
-                      <span className="hidden sm:inline">Borrar Plantilla</span>
-                    </button>
-
-                    {/* Botón rápido Texto Resumido si está en WhatsApp */}
-                    {targetPlatform === 'WA' && (
-                      <button
-                        type="button"
-                        onClick={() => setCustomText(compileWhatsAppStatusText(vehicle))}
-                        title="Resetear texto al formato resumido estándar de WhatsApp"
-                        className="px-3 py-2 rounded-xl text-xs font-bold bg-[#1F2337] hover:bg-[#2A2F45] text-[#86EFAC] border border-[#25D36640] transition-colors cursor-pointer flex items-center gap-1.5">
-                        <RefreshCw size={13} />
-                        <span>Texto Resumido</span>
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Action Toolbar */}
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    {/* Botón Generar con IA disponible en TODAS las plataformas */}
-                    <button
-                      type="button"
-                      onClick={handleGenerateAICopy}
-                      disabled={loadingAI}
-                      className="px-3 py-2 rounded-xl text-xs font-bold bg-[#8B5CF620] hover:bg-[#8B5CF635] text-[#C4B5FD] border border-[#8B5CF640] transition-colors cursor-pointer flex items-center gap-1.5">
-                      {loadingAI ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                      <span>{loadingAI ? 'Pensando...' : 'Generar con IA'}</span>
-                    </button>
-
-                    {/* Guardar como Nueva Plantilla */}
-                    <button
-                      type="button"
-                      onClick={handleSaveAsNewTemplate}
-                      title="Guardar como una nueva plantilla separada con otro nombre"
-                      className="px-3 py-2 rounded-xl text-xs font-bold bg-[#1F2337] hover:bg-[#2A2F45] text-[#E8EAED] border border-[#2A2F45] transition-colors cursor-pointer flex items-center gap-1.5">
-                      <Plus size={14} className="text-[#60A5FA]" />
-                      <span>Nueva</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleCopyText}
-                      className="px-3 py-2 rounded-xl text-xs font-bold bg-[#1F2337] hover:bg-[#2A2F45] text-white border border-[#2A2F45] transition-colors cursor-pointer flex items-center gap-1.5">
-                      {copiedText ? <CheckCircle2 size={14} className="text-green-400" /> : <Copy size={14} />}
-                      <span>{copiedText ? '¡Copiado!' : 'Copiar'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Variables dinámicas para insertar en la plantilla */}
-                <div className="flex items-center gap-1.5 flex-wrap text-[11px] pt-1 border-t border-[#1F2337]/60 flex-shrink-0">
-                  <span className="text-[#8B8FA8] font-bold text-[10px] uppercase mr-1">Variables auto:</span>
-                  {[
-                    { tag: '{MARCA}', label: 'Marca' },
-                    { tag: '{MODELO}', label: 'Modelo' },
-                    { tag: '{VERSION}', label: 'Versión' },
-                    { tag: '{AÑO}', label: 'Año' },
-                    { tag: '{KM}', label: 'KM' },
-                    { tag: '{PRECIO}', label: 'Precio' },
-                    { tag: '{ENTREGA}', label: 'Anticipo' },
-                    { tag: '{CUOTAS}', label: 'Cuotas' },
-                    { tag: '{COMBUSTIBLE}', label: 'Combustible' },
-                    { tag: '{TRANSMISION}', label: 'Transmisión' },
-                    { tag: '{PATENTE}', label: 'Patente' },
-                  ].map(vTag => (
-                    <button
-                      key={vTag.tag}
-                      type="button"
-                      onClick={() => handleInsertVariable(vTag.tag)}
-                      title={`Insertar ${vTag.tag} en el texto`}
-                      className="px-2 py-0.5 rounded-md bg-[#0F1117] hover:bg-[#2563EB25] hover:text-[#60A5FA] border border-[#2A2F45] text-[#A0A5BD] font-mono text-[10px] transition-colors cursor-pointer">
-                      + {vTag.label}
-                    </button>
-                  ))}
-                </div>
-
-                <textarea
-                  ref={textareaRef}
-                  className="w-full flex-1 bg-[#0B0D13] border border-[#1F2337] focus:border-[#FACC15] rounded-xl p-4 text-xs sm:text-sm text-[#E8EAED] leading-relaxed resize-none focus:outline-none transition-colors custom-scrollbar font-sans"
-                  placeholder="Escribí o seleccioná una plantilla..."
-                  value={customText}
-                  onChange={e => handleCustomTextChange(e.target.value)}
-                />
-              </div>
+            {/* Book Upload Modal */}
+            {showBookUploadModal && (
+              <BookUploadModal
+                vehicle={vehicle}
+                onClose={() => setShowBookUploadModal(false)}
+                onSaveBook={handleCreateNewBook}
+              />
             )}
 
           </div>
@@ -1823,7 +2024,7 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
               <button
                 type="button"
                 onClick={handleExecutePublish}
-                disabled={loadingPlatform !== null || (contentType === 'publicidad' ? !currentPublicidad : selectedPhotos.length === 0)}
+                disabled={loadingPlatform !== null || (contentType === 'publicidad' ? !currentPublicidad : (contentType === 'fotos' ? selectedPhotos.length === 0 : false))}
                 className="btn-primary flex-1 py-3 px-6 rounded-xl text-xs sm:text-sm font-extrabold shadow-lg transition-all flex items-center justify-center gap-2 hover:scale-[1.01] cursor-pointer disabled:opacity-50"
                 style={{
                   background: '#25D366',
@@ -1848,11 +2049,9 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                         ? (!currentPublicidad
                             ? `Sin publicidad asociada a ${vehicle?.Modelo || 'este modelo'}`
                             : 'Publicar Publicidad en WhatsApp Estado (1 foto)')
-                        : contentType === 'reel'
-                        ? `Publicar Reel en WhatsApp Estado (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
-                        : contentType === 'video'
-                        ? `Publicar Video en WhatsApp Estado (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
-                        : `Publicar en WhatsApp Estado (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
+                        : contentType === 'reel_video'
+                        ? `Publicar Reel / Video en WhatsApp Estado (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
+                        : `Publicar Fotos en WhatsApp Estado (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
                       }
                     </span>
                   </>
@@ -1890,11 +2089,9 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                       ? (!currentPublicidad
                           ? `Sin publicidad asociada a ${vehicle?.Modelo || 'este modelo'}`
                           : `Publicar Publicidad en ${activeMeta.name} (1 foto)`)
-                      : contentType === 'reel'
-                      ? `Publicar Reel en ${activeMeta.name} (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
-                      : contentType === 'video'
-                      ? `Publicar Video en ${activeMeta.name} (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
-                      : `Publicar en ${activeMeta.name} (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
+                      : contentType === 'reel_video'
+                      ? `Publicar Reel / Video en ${activeMeta.name} (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
+                      : `Publicar Fotos en ${activeMeta.name} (${selectedPhotos.length} ${selectedPhotos.length === 1 ? 'foto' : 'fotos'})`
                     }
                   </span>
                 </>
@@ -1920,6 +2117,8 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
           }}
         />
       )}
+
+
 
       {/* Modal para Cargar Nueva Publicidad Manualmente */}
       {showUploadModal && (

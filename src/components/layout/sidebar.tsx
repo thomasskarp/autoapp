@@ -30,9 +30,13 @@ export function Sidebar() {
   }, [])
 
   const handleLogout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = '/login'
+    try {
+      const supabase = createClient()
+      await supabase.auth.signOut().catch(() => {})
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    } finally {
+      window.location.href = '/login'
+    }
   }
 
   // To prevent hydration error, render a placeholder with same layout before mount

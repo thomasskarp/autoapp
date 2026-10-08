@@ -79,11 +79,21 @@ export async function POST(req: Request) {
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File | null
-    const folder = (formData.get('folder') as string) || 'reels'
-    const vehicleId = (formData.get('vehicleId') as string) || 'vehicle'
+    const rawFolder = (formData.get('folder') as string) || 'reels'
+    const rawVehicleId = (formData.get('vehicleId') as string) || 'vehicle'
+
+    // Sanear parámetros contra ataques de path traversal
+    const folder = rawFolder.replace(/[^a-zA-Z0-9_-]/g, '') || 'reels'
+    const vehicleId = rawVehicleId.replace(/[^a-zA-Z0-9_-]/g, '') || 'vehicle'
 
     if (!file) {
       return NextResponse.json({ success: false, error: 'No se envió ningún archivo de video o imagen' }, { status: 400 })
+    }
+
+    // Límite estricto de tamaño de archivo (100MB)
+    const MAX_FILE_SIZE = 100 * 1024 * 1024
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ success: false, error: 'El archivo excede el tamaño máximo permitido (100MB)' }, { status: 413 })
     }
 
     const supabase = createAdminClient()

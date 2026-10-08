@@ -2,39 +2,44 @@
 
 import { useState, useEffect } from 'react'
 import { Header } from '@/components/layout/header'
+import { createClient } from '@/lib/supabase/client'
 import {
-  Users, UserPlus, Key, Mail, Shield, Trash2, Eye, EyeOff,
+  Users, UserPlus, Key, Mail, Trash2, Eye, EyeOff,
   CheckCircle2, AlertCircle, Loader2, Sparkles, Copy, Check, RefreshCw,
-  Puzzle, Download, ExternalLink, ShieldAlert, Laptop
+  Puzzle, ExternalLink
 } from 'lucide-react'
 
 interface Vendedor {
   id: string
   email: string
   name: string
-  role: string
+  role: 'admin' | 'vendedor'
   createdAt: string
   lastSignIn?: string | null
 }
 
 export default function ConfiguracionPage() {
+  const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'vendedor' | null>(null)
+  const [checkingRole, setCheckingRole] = useState(true)
+
   const [vendedores, setVendedores] = useState<Vendedor[]>([])
   const [loadingList, setLoadingList] = useState(true)
 
-  // Formulario de nuevo vendedor
+  // Formulario de nuevo vendedor / admin
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [selectedRole, setSelectedRole] = useState<'vendedor' | 'admin'>('vendedor')
   const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState<string | null>(null)
 
+  // Actualización de rol en tabla
+  const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null)
+
   // Copiado al portapapeles
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [copiedCreds, setCopiedCreds] = useState(false)
-  const [browserGuide, setBrowserGuide] = useState<'chrome' | 'brave'>('chrome')
-  const [copiedExtensionLink, setCopiedExtensionLink] = useState(false)
 
   // Modal para cambiar contraseña
   const [editingVendedor, setEditingVendedor] = useState<Vendedor | null>(null)
@@ -43,10 +48,53 @@ export default function ConfiguracionPage() {
   const [changePassError, setChangePassError] = useState<string | null>(null)
   const [changePassSuccess, setChangePassSuccess] = useState(false)
 
+  // Helper para obtener headers de autenticación
+  const getAuthHeaders = async (includeContentType = true): Promise<Record<string, string>> => {
+    const headers: Record<string, string> = includeContentType ? { 'Content-Type': 'application/json' } : {}
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+    } catch {}
+    return headers
+  }
+
+  const checkUserRoleAndInit = async () => {
+    try {
+      setCheckingRole(true)
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (user) {
+        const rawRole = user.user_metadata?.role?.toLowerCase()
+        const isAdmin = user.email === 'okmmotorschaco@gmail.com' || user.email === 'tomas.skarp@gmail.com' || rawRole === 'admin' || rawRole === 'administrador'
+        const role: 'admin' | 'vendedor' = isAdmin ? 'admin' : 'vendedor'
+        setCurrentUserRole(role)
+        if (role === 'admin') {
+          fetchVendedores()
+        }
+      } else {
+        setCurrentUserRole('vendedor')
+      }
+    } catch (err) {
+      console.error('Error verificando rol:', err)
+      setCurrentUserRole('vendedor')
+    } finally {
+      setCheckingRole(false)
+    }
+  }
+
+  useEffect(() => {
+    checkUserRoleAndInit()
+  }, [])
+
   const fetchVendedores = async () => {
     try {
       setLoadingList(true)
-      const res = await fetch('/api/vendedores')
+      const headers = await getAuthHeaders(false)
+      const res = await fetch('/api/vendedores', { headers })
       const data = await res.json()
       if (data.success && Array.isArray(data.users)) {
         setVendedores(data.users)
@@ -57,10 +105,6 @@ export default function ConfiguracionPage() {
       setLoadingList(false)
     }
   }
-
-  useEffect(() => {
-    fetchVendedores()
-  }, [])
 
   // Generador de contraseñas fáciles de recordar y seguras
   const handleGeneratePassword = () => {
@@ -91,34 +135,62 @@ export default function ConfiguracionPage() {
 
     try {
       setIsSubmitting(true)
+      const headers = await getAuthHeaders(true)
       const res = await fetch('/api/vendedores', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name }),
+        headers,
+        body: JSON.stringify({ email, password, name, role: selectedRole }),
       })
 
       const data = await res.json()
 
       if (!res.ok || data.error) {
-        setFormError(data.error || 'Ocurrió un error al crear el vendedor.')
+        setFormError(data.error || 'Ocurrió un error al crear el usuario.')
         return
       }
 
-      setFormSuccess(`¡Vendedor ${email} creado exitosamente!`)
+      setFormSuccess(`¡${selectedRole === 'admin' ? 'Administrador' : 'Vendedor'} ${email} creado exitosamente!`)
       setEmail('')
       setPassword('')
       setName('')
+      setSelectedRole('vendedor')
       fetchVendedores()
       setTimeout(() => setFormSuccess(null), 5000)
     } catch (err: any) {
-      setFormError(err.message || 'Error de conexión al crear vendedor.')
+      setFormError(err.message || 'Error de conexión al crear usuario.')
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  const handleUpdateRole = async (vendedor: Vendedor, newRole: 'vendedor' | 'admin') => {
+    if (vendedor.role === newRole) return
+    if (vendedor.email === 'tomas.skarp@gmail.com') return
+
+    try {
+      setUpdatingRoleId(vendedor.id)
+      const headers = await getAuthHeaders(true)
+      const res = await fetch('/api/vendedores', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ id: vendedor.id, role: newRole }),
+      })
+
+      const data = await res.json()
+      if (data.success) {
+        setVendedores(prev => prev.map(v => v.id === vendedor.id ? { ...v, role: newRole } : v))
+      } else {
+        alert(data.error || 'Error al actualizar rol.')
+      }
+    } catch (err: any) {
+      alert('Error de conexión: ' + err.message)
+    } finally {
+      setUpdatingRoleId(null)
+    }
+  }
+
   const handleDeleteVendedor = async (vendedor: Vendedor) => {
-    if (vendedor.email === 'tomas.skarp@gmail.com') {
+    if (vendedor.email === 'tomas.skarp@gmail.com' || vendedor.email === 'okmmotorschaco@gmail.com') {
       alert('La cuenta del administrador principal no puede ser eliminada.')
       return
     }
@@ -127,7 +199,8 @@ export default function ConfiguracionPage() {
     if (!confirm(confirmMsg)) return
 
     try {
-      const res = await fetch(`/api/vendedores?id=${vendedor.id}`, { method: 'DELETE' })
+      const headers = await getAuthHeaders(false)
+      const res = await fetch(`/api/vendedores?id=${vendedor.id}`, { method: 'DELETE', headers })
       const data = await res.json()
       if (data.success) {
         setVendedores(prev => prev.filter(v => v.id !== vendedor.id))
@@ -151,9 +224,10 @@ export default function ConfiguracionPage() {
 
     try {
       setSavingPassword(true)
+      const headers = await getAuthHeaders(true)
       const res = await fetch('/api/vendedores', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ id: editingVendedor.id, newPassword }),
       })
 
@@ -182,473 +256,320 @@ export default function ConfiguracionPage() {
     setTimeout(() => setCopiedId(null), 2500)
   }
 
+  if (checkingRole) {
+    return (
+      <div className="flex flex-col h-full overflow-y-auto">
+        <Header title="Configuración" />
+        <div className="p-12 flex flex-col items-center justify-center gap-2 text-[#8B8FA8]">
+          <Loader2 size={24} className="animate-spin text-[#FACC15]" />
+        </div>
+      </div>
+    )
+  }
+
+  const isAdmin = currentUserRole === 'admin'
+
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      <Header
-        title="Configuración"
-        subtitle="Gestión de vendedores, accesos y equipo de la concesionaria"
-      />
+      <Header title="Configuración" />
 
       <div className="p-6 max-w-5xl mx-auto w-full flex flex-col gap-6 animate-in">
 
-        {/* Tarjeta de Información de Producción */}
-        <div className="card p-4 flex flex-wrap items-center justify-between gap-3 border border-[#FACC1530] bg-[#FACC1508]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#FACC1520] border border-[#FACC1540] flex items-center justify-center text-[#FACC15] shrink-0">
-              <Shield size={20} />
-            </div>
-            <div>
-              <p className="text-sm font-black text-white">Enlace oficial de ingreso para vendedores</p>
-              <p className="text-xs font-semibold text-[#8B8FA8]">Los vendedores que des de alta aquí podrán iniciar sesión desde este enlace:</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <code className="text-xs font-mono font-bold px-3 py-1.5 rounded-lg bg-[#0F1117] border border-[#2A2F45] text-[#FACC15]">
-              https://autoapp.vercel.app/login
-            </code>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText('https://autoapp.vercel.app/login')
-                setCopiedCreds(true)
-                setTimeout(() => setCopiedCreds(false), 2000)
-              }}
-              title="Copiar enlace"
-              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-[#1F2337] hover:bg-[#2A2F45] text-white flex items-center gap-1.5 cursor-pointer">
-              {copiedCreds ? <Check size={14} className="text-[#22C55E]" /> : <Copy size={14} />}
-              <span>{copiedCreds ? '¡Copiado!' : 'Copiar'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Formulario Principal: AGREGAR NUEVO VENDEDOR */}
-        <div className="card p-6 border border-[#1F2337] bg-[#13161F]">
-          <div className="flex items-center gap-3 mb-5 pb-3 border-b border-[#1F2337]">
-            <div className="w-9 h-9 rounded-lg bg-[#FACC1515] border border-[#FACC1530] flex items-center justify-center text-[#FACC15]">
-              <UserPlus size={18} />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-white">Agregar Nuevo Vendedor</h2>
-              <p className="text-xs font-medium text-[#8B8FA8]">Crea el acceso asignándole correo y contraseña para que pueda ingresar a AutoApp</p>
-            </div>
-          </div>
-
-          <form onSubmit={handleCreateVendedor} className="flex flex-col gap-4">
-            {formError && (
-              <div className="p-3.5 rounded-xl text-xs font-bold bg-[#EF444415] border border-[#EF444430] text-[#EF4444] flex items-center gap-2">
-                <AlertCircle size={16} className="shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            {formSuccess && (
-              <div className="p-3.5 rounded-xl text-xs font-bold bg-[#22C55E15] border border-[#22C55E30] text-[#22C55E] flex items-center gap-2">
-                <CheckCircle2 size={16} className="shrink-0" />
-                <span>{formSuccess}</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Cuadro 1: Correo del vendedor */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#A0A5BD] mb-1.5 flex items-center gap-1.5">
-                  <Mail size={13} className="text-[#FACC15]" />
-                  <span>Correo del Vendedor *</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="ej: vendedor@okmmotors.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="input w-full font-medium text-sm py-2.5 px-3"
-                />
-              </div>
-
-              {/* Cuadro 2: Contraseña asignada */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-[#A0A5BD] flex items-center gap-1.5">
-                    <Key size={13} className="text-[#FACC15]" />
-                    <span>Contraseña Asignada *</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleGeneratePassword}
-                    className="text-[11px] font-bold text-[#FACC15] hover:underline flex items-center gap-1 cursor-pointer">
-                    <Sparkles size={11} />
-                    <span>Generar</span>
-                  </button>
-                </div>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    placeholder="Mínimo 6 caracteres"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    className="input w-full font-medium text-sm py-2.5 px-3 pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8B8FA8] hover:text-white transition-colors cursor-pointer">
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Cuadro Opcional: Nombre del Vendedor */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#A0A5BD] mb-1.5 flex items-center gap-1.5">
-                  <Users size={13} className="text-[#FACC15]" />
-                  <span>Nombre / Apodo (Opcional)</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="ej: Carlos Gómez"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="input w-full font-medium text-sm py-2.5 px-3"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="btn-primary px-6 py-2.5 text-sm font-black flex items-center gap-2 cursor-pointer shadow-lg hover:scale-105 active:scale-95 transition-all">
-                {isSubmitting ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>Creando Vendedor...</span>
-                  </>
-                ) : (
-                  <>
-                    <UserPlus size={16} />
-                    <span>Dar de Alta Vendedor</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Lista de Vendedores Activos */}
-        <div className="card p-6 border border-[#1F2337] bg-[#13161F]">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#1F2337]">
-            <div className="flex items-center gap-2">
-              <Users size={18} className="text-[#FACC15]" />
-              <h3 className="text-base font-black text-white">Vendedores y Equipo ({vendedores.length})</h3>
-            </div>
-            <button
-              onClick={fetchVendedores}
-              title="Actualizar lista"
-              className="p-1.5 rounded-lg bg-[#1A1D28] hover:bg-[#252A3D] text-[#8B8FA8] hover:text-white transition-colors cursor-pointer">
-              <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
-            </button>
-          </div>
-
-          {loadingList ? (
-            <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#8B8FA8]">
-              <Loader2 size={24} className="animate-spin text-[#FACC15]" />
-              <p className="text-xs font-bold">Cargando vendedores...</p>
-            </div>
-          ) : vendedores.length === 0 ? (
-            <div className="py-10 text-center text-sm font-semibold text-[#8B8FA8]">
-              No hay vendedores registrados todavía. Usa el formulario de arriba para agregar uno.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-[#1F2337] text-[11px] font-black uppercase text-[#8B8FA8] tracking-wider">
-                    <th className="py-3 px-4">Vendedor</th>
-                    <th className="py-3 px-4">Correo</th>
-                    <th className="py-3 px-4">Rol</th>
-                    <th className="py-3 px-4">Alta</th>
-                    <th className="py-3 px-4 text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#1F2337]/60">
-                  {vendedores.map(v => {
-                    const isOwner = v.email === 'tomas.skarp@gmail.com'
-                    return (
-                      <tr key={v.id} className="hover:bg-[#1A1D28]/40 transition-colors">
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-[#FACC1515] border border-[#FACC1530] text-[#FACC15] font-black text-xs flex items-center justify-center">
-                              {v.name.slice(0, 2).toUpperCase()}
-                            </div>
-                            <span className="text-sm font-bold text-white">{v.name}</span>
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 font-mono text-xs text-[#E5E7EB]">
-                          {v.email}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border ${
-                            isOwner
-                              ? 'bg-[#FACC1515] text-[#FACC15] border-[#FACC1540]'
-                              : 'bg-[#3B82F615] text-[#3B82F6] border-[#3B82F640]'
-                          }`}>
-                            {isOwner ? 'Dueño / Admin' : 'Vendedor'}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-xs text-[#8B8FA8]">
-                          {new Date(v.createdAt).toLocaleDateString('es-AR')}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Botón copiar mensaje de acceso para WhatsApp */}
-                            <button
-                              onClick={() => copySellerAccessInstructions(v)}
-                              title="Copiar mensaje de acceso para enviarle por WhatsApp"
-                              className="p-2 rounded-lg bg-[#141824] hover:bg-[#252A3D] text-[#8B8FA8] hover:text-[#FACC15] transition-all cursor-pointer">
-                              {copiedId === v.id ? <Check size={14} className="text-[#22C55E]" /> : <Copy size={14} />}
-                            </button>
-
-                            {/* Botón cambiar contraseña */}
-                            <button
-                              onClick={() => {
-                                setEditingVendedor(v)
-                                setNewPassword('')
-                                setChangePassError(null)
-                                setChangePassSuccess(false)
-                              }}
-                              title="Cambiar contraseña de este vendedor"
-                              className="p-2 rounded-lg bg-[#141824] hover:bg-[#252A3D] text-[#8B8FA8] hover:text-white transition-all cursor-pointer">
-                              <Key size={14} />
-                            </button>
-
-                            {/* Botón dar de baja */}
-                            {!isOwner && (
-                              <button
-                                onClick={() => handleDeleteVendedor(v)}
-                                title="Dar de baja el acceso de este vendedor"
-                                className="p-2 rounded-lg bg-[#141824] hover:bg-[#EF444420] text-[#8B8FA8] hover:text-[#EF4444] transition-all cursor-pointer">
-                                <Trash2 size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Módulo: EXTENSIÓN AUTO-CYBORG 360 PARA VENDEDORES */}
-        <div className="card p-6 border border-[#1F2337] bg-[#13161F]">
-          <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[#1F2337]">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#FACC1515] border border-[#FACC1530] flex items-center justify-center text-[#FACC15] shrink-0">
-                <Puzzle size={22} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base sm:text-lg font-black text-white">Extensión Publicadora (Auto-Cyborg 360)</h3>
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#22C55E20] text-[#22C55E] border border-[#22C55E40]">
-                    v1.0.0 Lista
-                  </span>
-                </div>
-                <p className="text-xs text-[#8B8FA8] mt-0.5">
-                  Permite a tus vendedores publicar en Facebook Marketplace, Instagram y WhatsApp en 5 segundos con fotos y datos autocompletados.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center flex-wrap gap-2">
-              <a
-                href="https://chromewebstore.google.com/detail/dev-auto-cyborg-360/kjfjedgjkehndonpbgkffilaidcdpjob?hl=es"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-primary px-4 py-2 text-xs font-black flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
-                <ExternalLink size={15} />
-                <span>Instalar en 1 Clic (Chrome Store)</span>
-              </a>
-
-              <button
-                onClick={() => {
-                  const link = 'https://chromewebstore.google.com/detail/dev-auto-cyborg-360/kjfjedgjkehndonpbgkffilaidcdpjob?hl=es'
-                  navigator.clipboard.writeText(link)
-                  setCopiedExtensionLink(true)
-                  setTimeout(() => setCopiedExtensionLink(false), 2000)
-                }}
-                className="px-3 py-2 rounded-xl text-xs font-bold bg-[#1A1D28] hover:bg-[#252A3D] text-[#8B8FA8] hover:text-white transition-all flex items-center gap-1.5 cursor-pointer">
-                {copiedExtensionLink ? <Check size={14} className="text-[#22C55E]" /> : <Copy size={14} />}
-                <span>{copiedExtensionLink ? '¡Link Copiado!' : 'Copiar Link de Chrome Store'}</span>
-              </button>
-
-              <a
-                href="/auto-cyborg-360.zip"
-                download="auto-cyborg-360.zip"
-                title="Descarga manual en caso de no poder acceder a la tienda"
-                className="px-3 py-2 rounded-xl text-xs font-bold bg-[#141722] hover:bg-[#1E2335] text-[#8B8FA8] hover:text-white border border-[#2A2F45] transition-all flex items-center gap-1.5 cursor-pointer">
-                <Download size={14} />
-                <span>Descargar .ZIP</span>
-              </a>
-            </div>
-          </div>
-
-          {/* Selector de Navegador: Chrome vs Brave */}
-          <div className="mt-5">
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#A0A5BD] flex items-center gap-1.5">
-                <Laptop size={14} className="text-[#FACC15]" />
-                <span>Instalación Rápida en 1 Minuto — Elegí el navegador:</span>
-              </span>
-              <div className="flex rounded-lg bg-[#0F1117] p-1 border border-[#2A2F45]">
-                <button
-                  type="button"
-                  onClick={() => setBrowserGuide('chrome')}
-                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                    browserGuide === 'chrome'
-                      ? 'bg-[#FACC15] text-[#0F1117] shadow'
-                      : 'text-[#8B8FA8] hover:text-white'
-                  }`}>
-                  Google Chrome
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBrowserGuide('brave')}
-                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                    browserGuide === 'brave'
-                      ? 'bg-[#FACC15] text-[#0F1117] shadow'
-                      : 'text-[#8B8FA8] hover:text-white'
-                  }`}>
-                  Brave Browser
-                </button>
-              </div>
-            </div>
-
-            {/* Método 1: Chrome Store (Recomendado 1-Clic) */}
-            <div className="p-4 rounded-xl bg-[#FACC1510] border border-[#FACC1530] mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[#FACC1520] text-[#FACC15] flex items-center justify-center font-black text-sm shrink-0">
-                  ⚡
+        {/* Solo ADMIN puede ver y agregar nuevos vendedores o roles */}
+        {isAdmin && (
+          <>
+            {/* Formulario Principal: AGREGAR NUEVO VENDEDOR / ADMIN */}
+            <div className="card p-6 border border-[#1F2337] bg-[#13161F]">
+              <div className="flex items-center gap-3 mb-5 pb-3 border-b border-[#1F2337]">
+                <div className="w-9 h-9 rounded-lg bg-[#FACC1515] border border-[#FACC1530] flex items-center justify-center text-[#FACC15]">
+                  <UserPlus size={18} />
                 </div>
                 <div>
-                  <p className="text-xs font-black text-white">Método más rápido (1 Clic desde la Tienda)</p>
-                  <p className="text-[11px] text-[#A0A5BD]">
-                    Tus vendedores solo deben entrar al enlace de Chrome Store y presionar el botón azul <strong>"Añadir a Chrome"</strong> (o <strong>"Añadir a Brave"</strong>).
-                  </p>
+                  <h2 className="text-base sm:text-lg font-black text-white">Agregar Nuevo Vendedor</h2>
                 </div>
               </div>
-              <a
-                href="https://chromewebstore.google.com/detail/dev-auto-cyborg-360/kjfjedgjkehndonpbgkffilaidcdpjob?hl=es"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-primary px-3.5 py-1.5 text-xs font-black flex items-center gap-1.5 shadow cursor-pointer">
-                <ExternalLink size={13} />
-                <span>Abrir en Chrome Web Store</span>
-              </a>
+
+              <form onSubmit={handleCreateVendedor} className="flex flex-col gap-4">
+                {formError && (
+                  <div className="p-3.5 rounded-xl text-xs font-bold bg-[#EF444415] border border-[#EF444430] text-[#EF4444] flex items-center gap-2">
+                    <AlertCircle size={16} className="shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {formSuccess && (
+                  <div className="p-3.5 rounded-xl text-xs font-bold bg-[#22C55E15] border border-[#22C55E30] text-[#22C55E] flex items-center gap-2">
+                    <CheckCircle2 size={16} className="shrink-0" />
+                    <span>{formSuccess}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Cuadro 1: Correo */}
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-[#A0A5BD] mb-1.5 flex items-center gap-1.5">
+                      <Mail size={13} className="text-[#FACC15]" />
+                      <span>Correo del Vendedor *</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="ej: vendedor@okmmotors.com"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      className="input w-full font-medium text-sm py-2.5 px-3"
+                    />
+                  </div>
+
+                  {/* Cuadro 2: Contraseña */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-[#A0A5BD] flex items-center gap-1.5">
+                        <Key size={13} className="text-[#FACC15]" />
+                        <span>Contraseña Asignada *</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleGeneratePassword}
+                        className="text-[11px] font-bold text-[#FACC15] hover:underline flex items-center gap-1 cursor-pointer">
+                        <Sparkles size={11} />
+                        <span>Generar</span>
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        placeholder="Mínimo 6 caracteres"
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        className="input w-full font-medium text-sm py-2.5 px-3 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8B8FA8] hover:text-white transition-colors cursor-pointer">
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Cuadro 3: Nombre */}
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-[#A0A5BD] mb-1.5 flex items-center gap-1.5">
+                      <Users size={13} className="text-[#FACC15]" />
+                      <span>Nombre / Apodo (Opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="ej: Carlos Gómez"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      className="input w-full font-medium text-sm py-2.5 px-3"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  {/* Selector minimalista de roles con botones */}
+                  <div className="inline-flex items-center gap-1 bg-[#0F1117] p-1 rounded-xl border border-[#2A2F45]">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRole('vendedor')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        selectedRole === 'vendedor'
+                          ? 'bg-[#3B82F6] text-white shadow'
+                          : 'text-[#8B8FA8] hover:text-white'
+                      }`}>
+                      Vendedor
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRole('admin')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        selectedRole === 'admin'
+                          ? 'bg-[#FACC15] text-[#0F1117] shadow'
+                          : 'text-[#8B8FA8] hover:text-white'
+                      }`}>
+                      Admin
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="btn-primary px-6 py-2.5 text-sm font-black flex items-center gap-2 cursor-pointer shadow-lg hover:scale-105 active:scale-95 transition-all">
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Creando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus size={16} />
+                        <span>Dar de Alta</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
 
-            {/* Pasos para Chrome */}
-            {browserGuide === 'chrome' && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
-                  <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">1</div>
-                  <p className="text-xs font-bold text-white">Descargar y Descomprimir</p>
-                  <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                    Hacé clic en <strong>Descargar Extensión (.ZIP)</strong> y descomprimí el archivo en tu computadora. Te quedará la carpeta <code>auto-cyborg-360</code>.
-                  </p>
+            {/* Lista de Vendedores y Equipo */}
+            <div className="card p-6 border border-[#1F2337] bg-[#13161F]">
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#1F2337]">
+                <div className="flex items-center gap-2">
+                  <Users size={18} className="text-[#FACC15]" />
+                  <h3 className="text-base font-black text-white">Vendedores y Equipo ({vendedores.length})</h3>
                 </div>
-
-                <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
-                  <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">2</div>
-                  <p className="text-xs font-bold text-white">Abrir Extensiones</p>
-                  <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                    Abrí una nueva pestaña en Chrome y pegá en la barra:
-                  </p>
-                  <code className="text-[11px] font-mono font-bold text-[#FACC15] bg-[#161922] px-2 py-1 rounded border border-[#2A2F45]">
-                    chrome://extensions
-                  </code>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
-                  <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">3</div>
-                  <p className="text-xs font-bold text-white">Modo Desarrollador</p>
-                  <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                    Arriba a la derecha de la pantalla, activá la palanquita que dice <strong>"Modo de desarrollador"</strong>.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
-                  <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">4</div>
-                  <p className="text-xs font-bold text-white">Cargar Descomprimida</p>
-                  <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                    Hacé clic en el botón <strong>"Cargar descomprimida"</strong> (arriba a la izquierda) y elegí la carpeta <code>auto-cyborg-360</code>. ¡Listo!
-                  </p>
-                </div>
+                <button
+                  onClick={fetchVendedores}
+                  title="Actualizar lista"
+                  className="p-1.5 rounded-lg bg-[#1A1D28] hover:bg-[#252A3D] text-[#8B8FA8] hover:text-white transition-colors cursor-pointer">
+                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
+                </button>
               </div>
-            )}
 
-            {/* Pasos para Brave */}
-            {browserGuide === 'brave' && (
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
-                    <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">1</div>
-                    <p className="text-xs font-bold text-white">Descargar y Descomprimir</p>
-                    <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                      Descargá el archivo .zip y descomprimilo en tu computadora para obtener la carpeta <code>auto-cyborg-360</code>.
-                    </p>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
-                    <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">2</div>
-                    <p className="text-xs font-bold text-white">Abrir Extensiones en Brave</p>
-                    <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                      En la barra de direcciones de Brave pegá:
-                    </p>
-                    <code className="text-[11px] font-mono font-bold text-[#FACC15] bg-[#161922] px-2 py-1 rounded border border-[#2A2F45]">
-                      brave://extensions
-                    </code>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
-                    <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">3</div>
-                    <p className="text-xs font-bold text-white">Modo Desarrollador</p>
-                    <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                      Arriba a la derecha, activá la casilla <strong>"Modo de desarrollador"</strong>.
-                    </p>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-1.5">
-                    <div className="w-6 h-6 rounded-full bg-[#FACC1520] text-[#FACC15] text-xs font-black flex items-center justify-center">4</div>
-                    <p className="text-xs font-bold text-white">Cargar Descomprimida</p>
-                    <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                      Clic en <strong>"Cargar descomprimida"</strong> y seleccioná la carpeta <code>auto-cyborg-360</code>.
-                    </p>
-                  </div>
+              {loadingList ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#8B8FA8]">
+                  <Loader2 size={24} className="animate-spin text-[#FACC15]" />
+                  <p className="text-xs font-bold">Cargando equipo...</p>
                 </div>
-
-                {/* Aviso especial de Brave Shields */}
-                <div className="p-3.5 rounded-xl bg-[#FB923C12] border border-[#FB923C30] flex items-start gap-3">
-                  <ShieldAlert size={18} className="text-[#FB923C] shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs font-black text-[#FB923C]">
-                      🦁 Diferencia con Brave: Escudos de Protección (Brave Shields)
-                    </p>
-                    <p className="text-[11px] text-[#A0A5BD] mt-0.5 leading-relaxed">
-                      Brave utiliza el mismo motor que Google Chrome (Chromium), por lo que la extensión es <strong>100% compatible</strong>. La única diferencia es que Brave bloquea scripts de comunicación entre pestañas por defecto. Si al hacer clic en <em>"Publicar en Marketplace"</em> la pestaña de Facebook no carga automáticamente las fotos, hacé clic en el <strong>ícono del león en la barra de direcciones</strong> y desactivá los escudos para <code>autoapp.vercel.app</code> y <code>facebook.com</code>.
-                    </p>
-                  </div>
+              ) : vendedores.length === 0 ? (
+                <div className="py-10 text-center text-sm font-semibold text-[#8B8FA8]">
+                  No hay miembros registrados todavía. Usa el formulario de arriba para agregar uno.
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-[#1F2337] text-[11px] font-black uppercase text-[#8B8FA8] tracking-wider">
+                        <th className="py-3 px-4">Miembro</th>
+                        <th className="py-3 px-4">Correo</th>
+                        <th className="py-3 px-4">Rol</th>
+                        <th className="py-3 px-4">Alta</th>
+                        <th className="py-3 px-4 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#1F2337]/60">
+                      {vendedores.map(v => {
+                        const isOwner = v.email === 'tomas.skarp@gmail.com' || v.email === 'okmmotorschaco@gmail.com'
+                        return (
+                          <tr key={v.id} className="hover:bg-[#1A1D28]/40 transition-colors">
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full bg-[#FACC1515] border border-[#FACC1530] text-[#FACC15] font-black text-xs flex items-center justify-center">
+                                  {v.name.slice(0, 2).toUpperCase()}
+                                </div>
+                                <span className="text-sm font-bold text-white">{v.name}</span>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 font-mono text-xs text-[#E5E7EB]">
+                              {v.email}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              {isOwner ? (
+                                <span className="text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider border bg-[#FACC1515] text-[#FACC15] border-[#FACC1540]">
+                                  Admin
+                                </span>
+                              ) : (
+                                <div className="inline-flex items-center gap-0.5 bg-[#0F1117] p-0.5 rounded-lg border border-[#2A2F45]">
+                                  <button
+                                    type="button"
+                                    disabled={updatingRoleId === v.id}
+                                    onClick={() => handleUpdateRole(v, 'vendedor')}
+                                    className={`px-2 py-1 rounded text-[11px] font-black transition-all cursor-pointer ${
+                                      v.role === 'vendedor'
+                                        ? 'bg-[#3B82F6] text-white shadow'
+                                        : 'text-[#8B8FA8] hover:text-white'
+                                    }`}>
+                                    Vendedor
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={updatingRoleId === v.id}
+                                    onClick={() => handleUpdateRole(v, 'admin')}
+                                    className={`px-2 py-1 rounded text-[11px] font-black transition-all cursor-pointer ${
+                                      v.role === 'admin'
+                                        ? 'bg-[#FACC15] text-[#0F1117] shadow'
+                                        : 'text-[#8B8FA8] hover:text-white'
+                                    }`}>
+                                    Admin
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 text-xs text-[#8B8FA8]">
+                              {new Date(v.createdAt).toLocaleDateString('es-AR')}
+                            </td>
+                            <td className="py-3.5 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {/* Botón copiar mensaje de acceso para WhatsApp */}
+                                <button
+                                  onClick={() => copySellerAccessInstructions(v)}
+                                  title="Copiar mensaje de acceso para enviarle por WhatsApp"
+                                  className="p-2 rounded-lg bg-[#141824] hover:bg-[#252A3D] text-[#8B8FA8] hover:text-[#FACC15] transition-all cursor-pointer">
+                                  {copiedId === v.id ? <Check size={14} className="text-[#22C55E]" /> : <Copy size={14} />}
+                                </button>
+
+                                {/* Botón cambiar contraseña */}
+                                <button
+                                  onClick={() => {
+                                    setEditingVendedor(v)
+                                    setNewPassword('')
+                                    setChangePassError(null)
+                                    setChangePassSuccess(false)
+                                  }}
+                                  title="Cambiar contraseña de este usuario"
+                                  className="p-2 rounded-lg bg-[#141824] hover:bg-[#252A3D] text-[#8B8FA8] hover:text-white transition-all cursor-pointer">
+                                  <Key size={14} />
+                                </button>
+
+                                {/* Botón dar de baja */}
+                                {!isOwner && (
+                                  <button
+                                    onClick={() => handleDeleteVendedor(v)}
+                                    title="Dar de baja el acceso de este usuario"
+                                    className="p-2 rounded-lg bg-[#141824] hover:bg-[#EF444420] text-[#8B8FA8] hover:text-[#EF4444] transition-all cursor-pointer">
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Automatización de Publicaciones (Visible para TODOS: Vendedor y Admin) */}
+        <div className="card p-6 border border-[#1F2337] bg-[#13161F] flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#FACC1515] border border-[#FACC1530] flex items-center justify-center text-[#FACC15] shrink-0">
+              <Puzzle size={20} />
+            </div>
+            <h3 className="text-base font-black text-white">Automatización de Publicaciones</h3>
           </div>
+
+          <a
+            href="https://chromewebstore.google.com/detail/dev-auto-cyborg-360/kjfjedgjkehndonpbgkffilaidcdpjob?hl=es"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary px-5 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+            <ExternalLink size={16} />
+            <span>Instalar automatización de publicaciones</span>
+          </a>
         </div>
 
       </div>
 
       {/* Modal para cambiar contraseña */}
-      {editingVendedor && (
+      {isAdmin && editingVendedor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in">
           <div className="card w-full max-w-md p-6 border border-[#2A2F45] bg-[#0F1117] shadow-2xl rounded-2xl flex flex-col gap-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#1F2337]">

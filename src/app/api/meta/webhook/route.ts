@@ -1,8 +1,31 @@
 import { NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { sendTelegramNotification } from '@/lib/services/telegram-notifier'
 
-// Token secreto para verificar el webhook con Meta
-const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN || 'autoapp_meta_secret_webhook_2026'
+// Token secreto para verificar el webhook con Meta Developers
+const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN
+
+function verifyMetaSignature(rawBody: string, signatureHeader: string | null): boolean {
+  const appSecret = process.env.FACEBOOK_APP_SECRET
+  if (!appSecret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Meta Webhook] FACEBOOK_APP_SECRET no configurado en entorno de producción. Rechazando payload.')
+      return false
+    }
+    return true
+  }
+
+  if (!signatureHeader || !signatureHeader.startsWith('sha256=')) {
+    return false
+  }
+
+  const expectedSignature = 'sha256=' + crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex')
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expectedSignature))
+  } catch {
+    return false
+  }
+}
 
 /**
  * GET: Verificación del Webhook por parte de Meta Developers (Subscription Challenge)
@@ -14,7 +37,10 @@ export async function GET(req: Request) {
     const token = url.searchParams.get('hub.verify_token')
     const challenge = url.searchParams.get('hub.challenge')
 
-    console.log('[Meta Webhook Verification] Intento de verificación:', { mode, tokenReceived: token, tokenExpected: VERIFY_TOKEN })
+    if (!VERIFY_TOKEN) {
+      console.error('[Meta Webhook Verification] META_WEBHOOK_VERIFY_TOKEN no está definido en variables de entorno.')
+      return new Response('Configuración incompleta', { status: 500 })
+    }
 
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       console.log('[Meta Webhook Verification] ¡Verificación exitosa!')
@@ -37,8 +63,17 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    console.log('[Meta Webhook Event] Payload recibido:', JSON.stringify(body, null, 2))
+    const rawBody = await req.text()
+    const signature = req.headers.get('x-hub-signature-256')
+
+    // Validar firma criptográfica HMAC-SHA256
+    if (!verifyMetaSignature(rawBody, signature)) {
+      console.warn('[Meta Webhook] Intento de invocación con firma X-Hub-Signature-256 inválida o ausente.')
+      return NextResponse.json({ error: 'Firma criptográfica inválida' }, { status: 401 })
+    }
+
+    const body = JSON.parse(rawBody)
+    console.log('[Meta Webhook Event] Payload verificado recibido:', JSON.stringify(body, null, 2))
 
     const objectType = body.object // 'instagram' o 'page'
 
@@ -52,7 +87,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: 'EVENT_RECEIVED' })
   } catch (err: any) {
     console.error('[Meta Webhook POST Exception]:', err)
-    return NextResponse.json({ status: 'ERROR', error: err.message }, { status: 200 }) // Responder 200 para evitar reintentos continuos
+    return NextResponse.json({ status: 'ERROR', error: err.message }, { status: 200 })
   }
 }
 
