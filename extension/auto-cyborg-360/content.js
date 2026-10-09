@@ -1152,6 +1152,181 @@ function findFacebookFieldContainer(keywords) {
   return null
 }
 
+// Helper: Dispara clics profundos y eventos de puntero completos
+function triggerFacebookClick(el) {
+  if (!el) return false
+  try {
+    const target = el.closest('button') || el.closest('[role="button"]') || el
+    target.focus?.()
+    const opts = { bubbles: true, cancelable: true, view: window, buttons: 1 }
+    target.dispatchEvent(new PointerEvent('pointerdown', opts))
+    target.dispatchEvent(new MouseEvent('mousedown', opts))
+    target.dispatchEvent(new PointerEvent('pointerup', opts))
+    target.dispatchEvent(new MouseEvent('mouseup', opts))
+    target.dispatchEvent(new MouseEvent('click', opts))
+    if (typeof target.click === 'function') {
+      try { target.click() } catch (e) {}
+    }
+    return true
+  } catch (err) {
+    console.warn('[Auto-Cyborg] triggerFacebookClick error:', err)
+    return false
+  }
+}
+
+// Espera a que aparezcan opciones en el DOM de Facebook Marketplace
+async function waitForFacebookMenuOptions(timeoutMs = 1500) {
+  const startTime = Date.now()
+  const selectors = [
+    '[role="option"]',
+    '[role="menuitem"]',
+    'div[role="listbox"] [role="option"]',
+    'div[role="listbox"] div[tabindex]',
+    'div[role="listbox"] span',
+    'div[aria-haspopup="listbox"] [role="option"]',
+    'div[role="dialog"] [role="option"]',
+    'div[data-pagelet*="menu"] [role="option"]'
+  ].join(', ')
+
+  while (Date.now() - startTime < timeoutMs) {
+    const list = Array.from(document.querySelectorAll(selectors)).filter(el => {
+      const r = el.getBoundingClientRect()
+      return (r.width > 0 && r.height > 0) || el.offsetParent !== null
+    })
+
+    if (list.length > 0) {
+      return list
+    }
+    await new Promise(r => setTimeout(r, 80))
+  }
+
+  return []
+}
+
+// Localiza el disparador interactivo del selector "Tipo de vehículo"
+function findFacebookVehicleTypeTrigger() {
+  // 1. Selector directo por aria-label
+  const direct = document.querySelector(
+    '[aria-label*="tipo de vehículo" i], [aria-label*="tipo de vehiculo" i], [aria-label*="vehicle type" i]'
+  )
+  if (direct) {
+    return direct.querySelector('[role="combobox"], [role="button"]') || direct
+  }
+
+  // 2. Buscar por texto visible dentro de comboboxes, botones o labels
+  const candidates = Array.from(document.querySelectorAll('label, div[role="combobox"], div[role="button"], div[tabindex="0"]'))
+  for (const c of candidates) {
+    const txt = (c.innerText || c.textContent || '').trim().toLowerCase()
+    const firstLine = txt.split('\n')[0].trim()
+    if (firstLine.includes('tipo de veh') || txt.includes('tipo de vehículo') || txt.includes('tipo de vehiculo') || txt.includes('vehicle type')) {
+      return c.querySelector('[role="combobox"], [role="button"]') || c
+    }
+  }
+
+  // 3. Buscar cualquier elemento hoja con el texto exacto o parcial
+  const allLeafNodes = Array.from(document.querySelectorAll('*')).filter(el => {
+    return el.children.length === 0 && (el.textContent || '').trim().toLowerCase().includes('tipo de veh')
+  })
+  if (allLeafNodes.length > 0) {
+    const leaf = allLeafNodes[0]
+    return leaf.closest('[role="combobox"]') || 
+           leaf.closest('label') || 
+           leaf.closest('[role="button"]') || 
+           leaf.closest('div[tabindex]') || 
+           leaf.parentElement
+  }
+
+  return null
+}
+
+// Verifica si el tipo de vehículo ya fue seleccionado previamente
+function isFacebookVehicleTypeSelected() {
+  // A. Si campos subsiguientes (Año, Marca) ya están presentes en el DOM
+  const hasSubsequentFields = Boolean(
+    document.querySelector('[aria-label*="año" i], [aria-label*="ano" i], [aria-label*="year" i]') ||
+    document.querySelector('[aria-label*="marca" i], [aria-label*="make" i]')
+  )
+  if (hasSubsequentFields) return true
+
+  // B. Si el disparador ya muestra un valor como "Automóvil" o "Auto" o "Camioneta"
+  const trigger = findFacebookVehicleTypeTrigger()
+  if (trigger) {
+    const txt = (trigger.innerText || trigger.textContent || '').trim().toLowerCase()
+    if (!txt.includes('tipo de veh') && (txt.includes('auto') || txt.includes('camion') || txt.includes('coche'))) {
+      return true
+    }
+  }
+
+  return false
+}
+
+// Selecciona automáticamente "Tipo de vehículo" en Facebook Marketplace
+async function selectFacebookVehicleType() {
+  if (isFacebookVehicleTypeSelected()) {
+    console.log('✅ [Auto-Cyborg] Tipo de vehículo ya seleccionado.')
+    return true
+  }
+
+  const trigger = findFacebookVehicleTypeTrigger()
+  if (!trigger) {
+    console.log('[Auto-Cyborg] Esperando que aparezca selector de Tipo de vehículo...')
+    return false
+  }
+
+  console.log('🚗 [Auto-Cyborg] Abriendo menú de Tipo de vehículo...')
+
+  // 1. Clic en el elemento interactivo y sus contenedores
+  triggerFacebookClick(trigger)
+  if (trigger.parentElement) {
+    triggerFacebookClick(trigger.parentElement)
+  }
+  const comboboxChild = trigger.querySelector('[role="combobox"], [role="button"]')
+  if (comboboxChild) {
+    triggerFacebookClick(comboboxChild)
+  }
+  const inputChild = trigger.querySelector('input')
+  if (inputChild) {
+    triggerFacebookClick(inputChild)
+  }
+
+  // Teclado por si Facebook requiere ArrowDown/Space para desplegar
+  trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
+
+  // 2. Esperar opciones en el DOM
+  const options = await waitForFacebookMenuOptions(1500)
+  console.log(`[Auto-Cyborg] Opciones encontradas para Tipo de vehículo: ${options.length}`)
+
+  if (options.length > 0) {
+    // Buscar la opción de automóvil / camioneta / coche
+    let chosen = options.find(opt => {
+      const t = (opt.innerText || opt.textContent || '').trim().toLowerCase()
+      return (
+        t.includes('auto') ||
+        t.includes('camion') ||
+        t.includes('coche') ||
+        t.includes('car') ||
+        (t.includes('vehículo') && !t.includes('moto')) ||
+        (t.includes('vehiculo') && !t.includes('moto'))
+      )
+    })
+
+    // Fallback: Si no coincide por texto, en Facebook Marketplace la 1ª opción siempre es autos/camionetas
+    if (!chosen) {
+      chosen = options[0]
+    }
+
+    if (chosen) {
+      console.log(`🎯 [Auto-Cyborg] Clic en Tipo de vehículo: "${chosen.innerText || chosen.textContent}"`)
+      triggerFacebookClick(chosen)
+      chosen.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
+      await new Promise(r => setTimeout(r, 800))
+      return true
+    }
+  }
+
+  return false
+}
+
 // Selecciona una opción en un dropdown o combobox de Facebook Marketplace (Año, Marca, Modelo, etc.)
 async function selectFacebookDropdownOption(keywords, targetValue, isModel = false) {
   if (!targetValue) return false
@@ -1162,8 +1337,6 @@ async function selectFacebookDropdownOption(keywords, targetValue, isModel = fal
   }
 
   const targetStr = String(targetValue).trim().toLowerCase()
-  console.log(`[Auto-Cyborg] Seleccionando "${targetValue}" en ${keywords[0]}...`)
-
   const input = container.tagName === 'INPUT' ? container : container.querySelector('input')
   const clickable = container.querySelector('[role="combobox"], [role="button"]') || container
 
@@ -1174,30 +1347,28 @@ async function selectFacebookDropdownOption(keywords, targetValue, isModel = fal
     return true
   }
 
-  // 1. Abrir dropdown o enfocar input
+  console.log(`[Auto-Cyborg] Seleccionando "${targetValue}" en ${keywords[0]}...`)
+
+  // 1. Abrir dropdown
+  triggerFacebookClick(clickable)
+  triggerFacebookClick(container)
+
   if (input) {
-    input.focus()
-    simulateClick(input)
-    // Escribir en el input para disparar búsqueda reactiva en Facebook
-    setReactInputValue(input, targetValue)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
-  } else {
-    simulateClick(clickable)
+    input.focus?.()
+    if (!input.readOnly) {
+      // Si no es readOnly, escribir para filtrar reactivamente (Marca, Modelo)
+      setReactInputValue(input, targetValue)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
+    } else {
+      // Si es readOnly (como Año), simular clic y flecha abajo
+      triggerFacebookClick(input)
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
+    }
   }
 
-  // Esperar a que Facebook renderice el menú flotante en el portal
-  await new Promise(r => setTimeout(r, 450))
-
-  // 2. Buscar opciones renderizadas en el DOM
-  const optionSelectors = [
-    '[role="option"]',
-    '[role="menuitem"]',
-    'div[role="listbox"] div[tabindex]',
-    'div[role="listbox"] span',
-    'div[aria-haspopup="listbox"] [role="option"]'
-  ]
-  const options = Array.from(document.querySelectorAll(optionSelectors.join(', ')))
+  // 2. Esperar opciones en el DOM
+  const options = await waitForFacebookMenuOptions(1200)
 
   if (options.length > 0) {
     let matched = null
@@ -1225,24 +1396,34 @@ async function selectFacebookDropdownOption(keywords, targetValue, isModel = fal
       })
     }
 
-    // Match 4: Parcial
+    // Match 4: Parcial / inclusión
     if (!matched) {
       matched = options.find(opt => {
         const t = (opt.innerText || opt.textContent || '').trim().toLowerCase()
-        return t.includes(targetStr) || targetStr.includes(t)
+        return t.includes(targetStr) || targetStr.includes(t) || (baseModel && (t.includes(baseModel) || baseModel.includes(t)))
+      })
+    }
+
+    // Match 5: Por tokens si tiene varias palabras
+    if (!matched && targetStr.includes(' ')) {
+      const tokens = targetStr.split(/\s+/).filter(w => w.length >= 3)
+      matched = options.find(opt => {
+        const t = (opt.innerText || opt.textContent || '').trim().toLowerCase()
+        return tokens.some(tok => t === tok || t.includes(tok))
       })
     }
 
     if (matched) {
-      console.log(`🎯 [Auto-Cyborg] Opción elegida: "${matched.innerText || matched.textContent}"`)
-      simulateClick(matched)
+      console.log(`🎯 [Auto-Cyborg] Opción elegida para ${keywords[0]}: "${matched.innerText || matched.textContent}"`)
+      triggerFacebookClick(matched)
+      matched.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
       await new Promise(r => setTimeout(r, 400))
       return true
     }
   }
 
-  // Si no encontró opción en menú pero hay input, presionar Enter para confirmar
-  if (input) {
+  // Si no encontró opción en menú pero hay input editable, presionar Enter para confirmar sugerencia de Facebook
+  if (input && !input.readOnly) {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
     input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, bubbles: true }))
     await new Promise(r => setTimeout(r, 300))
@@ -1254,19 +1435,39 @@ async function selectFacebookDropdownOption(keywords, targetValue, isModel = fal
 // Rellena un campo de texto numérico o plano en Facebook Marketplace (Precio, Kilometraje)
 function fillFacebookTextInput(keywords, value) {
   if (!value) return false
-  const container = findFacebookFieldContainer(keywords)
-  if (!container) return false
+  const kwList = Array.isArray(keywords) ? keywords : [keywords]
 
-  const input = container.tagName === 'INPUT' ? container : container.querySelector('input')
-  if (input) {
-    const current = (input.value || '').trim()
-    if (!current || current === '0') {
-      setReactInputValue(input, String(value))
-      console.log(`✅ [Auto-Cyborg] Campo completado (${keywords[0]}): ${value}`)
+  // 1. Selector directo por input aria-label o name
+  for (const kw of kwList) {
+    const directInputs = Array.from(document.querySelectorAll(`input[aria-label*="${kw}" i], input[name*="${kw}" i]`))
+    for (const inp of directInputs) {
+      const current = (inp.value || '').trim()
+      if (!current || current === '0') {
+        inp.focus?.()
+        setReactInputValue(inp, String(value))
+        console.log(`✅ [Auto-Cyborg] Campo completado directo (${kw}): ${value}`)
+        return true
+      }
       return true
     }
-    return true
   }
+
+  // 2. Búsqueda por contenedor de campo
+  const container = findFacebookFieldContainer(keywords)
+  if (container) {
+    const input = container.tagName === 'INPUT' ? container : container.querySelector('input')
+    if (input) {
+      const current = (input.value || '').trim()
+      if (!current || current === '0') {
+        input.focus?.()
+        setReactInputValue(input, String(value))
+        console.log(`✅ [Auto-Cyborg] Campo completado vía contenedor (${kwList[0]}): ${value}`)
+        return true
+      }
+      return true
+    }
+  }
+
   return false
 }
 
@@ -1320,30 +1521,33 @@ async function runFacebookVehicleAutomation(car) {
 
   // 2. Autocompletar campos del formulario
   if (!isFacebookFieldsFilled) {
-    // A. Tipo de vehículo (si Facebook lo solicita como dropdown)
-    await selectFacebookDropdownOption(['tipo de vehículo', 'vehicle type', 'tipo'], 'Automóvil/camión')
-    await new Promise(r => setTimeout(r, 250))
+    // A. Tipo de vehículo (requerido por Facebook antes de mostrar Año, Marca, etc.)
+    const typeSelected = await selectFacebookVehicleType()
+    if (typeSelected) {
+      // Dar tiempo para que Facebook renderice los campos dependientes
+      await new Promise(r => setTimeout(r, 600))
+    }
 
     // B. Año
     const carYear = car.anio ? String(car.anio).trim() : ''
     if (carYear) {
-      await selectFacebookDropdownOption(['año', 'year', 'fabricación'], carYear)
-      await new Promise(r => setTimeout(r, 350))
+      await selectFacebookDropdownOption(['año', 'ano', 'year', 'fabricación'], carYear)
+      await new Promise(r => setTimeout(r, 400))
     }
 
     // C. Marca
     const carBrand = (car.marca || '').trim()
     if (carBrand) {
-      await selectFacebookDropdownOption(['marca', 'make', 'fabricante'], carBrand)
+      await selectFacebookDropdownOption(['marca', 'make', 'brand', 'fabricante'], carBrand)
       // Dar tiempo a Facebook para que consulte los modelos disponibles
-      await new Promise(r => setTimeout(r, 800))
+      await new Promise(r => setTimeout(r, 1000))
     }
 
     // D. Modelo
     const carModel = (car.modelo || '').trim()
     if (carModel) {
       await selectFacebookDropdownOption(['modelo', 'model'], carModel, true)
-      await new Promise(r => setTimeout(r, 350))
+      await new Promise(r => setTimeout(r, 400))
     }
 
     // E. Kilometraje
@@ -1364,8 +1568,8 @@ async function runFacebookVehicleAutomation(car) {
     }
 
     // Verificar si ya se completaron los campos principales (Marca o Año o Precio)
-    const brandContainer = findFacebookFieldContainer(['marca', 'make'])
-    const yearContainer = findFacebookFieldContainer(['año', 'year'])
+    const brandContainer = findFacebookFieldContainer(['marca', 'make', 'brand'])
+    const yearContainer = findFacebookFieldContainer(['año', 'ano', 'year'])
     const priceContainer = findFacebookFieldContainer(['precio', 'price'])
     
     const isBrandDone = Boolean(brandContainer?.innerText?.toLowerCase().includes(carBrand.toLowerCase()))
