@@ -1121,6 +1121,15 @@ async function injectPhotosIntoFacebook(files) {
   }
 }
 
+// Helper: Normaliza cadenas para comparaciones libres de tildes y mayúsculas
+function normalizeStr(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
 // Localiza el contenedor de un campo en Facebook Marketplace (label, div[role="combobox"], etc.)
 function findFacebookFieldContainer(keywords) {
   const kwList = Array.isArray(keywords) ? keywords : [keywords]
@@ -1135,17 +1144,43 @@ function findFacebookFieldContainer(keywords) {
     }
   }
 
-  // 2. Prioridad: Buscar en todos los labels y comboboxes por texto visible o primera línea
-  const allContainers = Array.from(document.querySelectorAll('label, div[role="combobox"], div[role="button"]'))
+  // 2. Prioridad: Buscar en todos los labels y comboboxes por texto visible normalizado
+  const allContainers = Array.from(document.querySelectorAll('label, div[role="combobox"], div[role="button"], div[tabindex="0"]'))
   for (const c of allContainers) {
-    const txt = (c.innerText || c.textContent || '').trim().toLowerCase()
-    const firstLine = txt.split('\n')[0].trim()
+    const rawTxt = (c.innerText || c.textContent || '').trim()
+    const normTxt = normalizeStr(rawTxt)
+    const normFirstLine = normTxt.split('\n')[0].trim()
 
     for (const kw of kwList) {
-      const k = kw.toLowerCase()
-      if (firstLine === k || firstLine.startsWith(k) || (txt.length < 50 && (txt.startsWith(k) || txt.includes(k)))) {
+      const normKw = normalizeStr(kw)
+      if (
+        normFirstLine === normKw || 
+        normFirstLine.startsWith(normKw) || 
+        (normTxt.length < 90 && (normTxt.startsWith(normKw) || normTxt.includes(normKw)))
+      ) {
         return c
       }
+    }
+  }
+
+  // 3. Prioridad: Buscar cualquier elemento hoja con el texto y escalar a su contenedor
+  for (const kw of kwList) {
+    const normKw = normalizeStr(kw)
+    const allLeafNodes = Array.from(document.querySelectorAll('*')).filter(el => {
+      if (el.children.length === 0) {
+        const text = normalizeStr(el.textContent || '')
+        return text.includes(normKw)
+      }
+      return false
+    })
+    if (allLeafNodes.length > 0) {
+      const leaf = allLeafNodes[0]
+      const parent = leaf.closest('[role="combobox"]') || 
+                     leaf.closest('label') || 
+                     leaf.closest('[role="button"]') || 
+                     leaf.closest('div[tabindex]') || 
+                     leaf.parentElement
+      if (parent) return parent
     }
   }
 
@@ -1327,27 +1362,123 @@ async function selectFacebookVehicleType() {
   return false
 }
 
-// Selecciona una opción en un dropdown o combobox de Facebook Marketplace (Año, Marca, Modelo, etc.)
-async function selectFacebookDropdownOption(keywords, targetValue, isModel = false) {
-  if (!targetValue) return false
+// Infiere y resuelve la lista de tipos de carrocería a buscar
+function resolveCarBodyStyle(car) {
+  const rawBody = normalizeStr(car.Tipo_Carroceria || car.carroceria || car.tipo_carroceria || car.tipo || '')
+  const modelStr = normalizeStr(`${car.marca || ''} ${car.modelo || ''} ${car.version || ''}`)
+
+  // Pick-up / Camioneta
+  if (
+    rawBody.includes('pick') || rawBody.includes('camioneta') || rawBody.includes('chata') ||
+    /\b(hilux|ranger|amarok|toro|frontier|s10|oroch|strada|saveiro|maverick|ram|f-150|f150|alaskan|l200|d-max|poer|titano)\b/i.test(modelStr)
+  ) {
+    return ['camioneta', 'pick-up', 'pickup', 'camioneta pickup', 'truck']
+  }
+
+  // SUV
+  if (
+    rawBody.includes('suv') || rawBody.includes('utilitario deportivo') ||
+    /\b(tracker|compass|renegade|kicks|duster|ecosport|cross|taos|t-cross|nivus|hr-v|cr-v|creta|tucson|sportage|sw4|tiguan|captur|2008|3008|5008|c4 cactus|cactus|stepway|spin|rav4|kuga|territory|bronco|pulse|fastback|wr-v|corolla cross)\b/i.test(modelStr)
+  ) {
+    return ['suv', 'utilitario', 'camioneta suv']
+  }
+
+  // Sedán
+  if (
+    rawBody.includes('sedan') || rawBody.includes('4 puertas') ||
+    /\b(cronos|cruze|virtus|vento|prisma|logan|voyage|bora|elysee|c-elysee|siena|linea|civic|sentra|versa|aveo|symbol)\b/i.test(modelStr)
+  ) {
+    return ['sedan', 'sedán']
+  }
+
+  // Hatchback
+  if (
+    rawBody.includes('hatch') || rawBody.includes('5 puertas') ||
+    /\b(gol|208|206|207|onix|sandero|polo|etios|ka|clio|fox|fiesta|focus|argo|mobi|up|golf|c3|palio|uno|kwid|yaris|march|tiida|fit)\b/i.test(modelStr)
+  ) {
+    return ['hatchback', 'hatch']
+  }
+
+  // Furgoneta / Utilitario
+  if (
+    rawBody.includes('furgon') || rawBody.includes('van') || rawBody.includes('utilitario') ||
+    /\b(kangoo|berlingo|partner|fiorino|transit|master|sprinter|expert|jumpy|boxer|ducato)\b/i.test(modelStr)
+  ) {
+    return ['furgoneta', 'van', 'minivan', 'utilitario']
+  }
+
+  if (rawBody) {
+    return [rawBody]
+  }
+
+  return ['suv', 'sedan', 'hatchback', 'camioneta']
+}
+
+// Infiere y resuelve el tipo de combustible a buscar en Facebook
+function resolveCarFuelType(car) {
+  const rawFuel = normalizeStr(car.Tipo_Combustible || car.combustible || car.tipo_combustible || '')
+
+  if (rawFuel.includes('diesel') || rawFuel.includes('gasoil')) {
+    return ['diesel', 'diésel']
+  }
+  if (rawFuel.includes('gnc') || rawFuel.includes('gas')) {
+    return ['gnc', 'gas natural', 'gas']
+  }
+  if (rawFuel.includes('hibrid')) {
+    return ['hibrido', 'híbrido', 'hybrid']
+  }
+  if (rawFuel.includes('electr')) {
+    return ['electrico', 'eléctrico', 'electric']
+  }
+
+  // Por defecto en Argentina / LatAm es Nafta / Gasolina
+  return ['gasolina', 'nafta', 'petrol']
+}
+
+// Infiere y resuelve la transmisión (Automática o Manual)
+function resolveCarTransmission(car) {
+  const rawTrans = normalizeStr(car.transmision || car.Transmision || '')
+  const modelStr = normalizeStr(`${car.modelo || ''} ${car.version || ''}`)
+
+  const isAuto = rawTrans.includes('auto') || 
+                 rawTrans.includes('at') || 
+                 /\b(at|dsg|cvt|tiptronic|powershift|steptronic|eat6|eat8)\b/i.test(modelStr)
+
+  if (isAuto) {
+    return ['automatica', 'automática', 'automatic']
+  }
+
+  return ['manual']
+}
+
+// Selecciona una opción en un dropdown o combobox de Facebook Marketplace (Año, Marca, Modelo, Carrocería, Estado, Combustible, etc.)
+async function selectFacebookDropdownOption(keywords, targetValues, isModel = false) {
+  if (!targetValues) return false
+  const targets = (Array.isArray(targetValues) ? targetValues : [targetValues]).map(t => normalizeStr(t)).filter(Boolean)
+  if (targets.length === 0) return false
+
   const container = findFacebookFieldContainer(keywords)
   if (!container) {
     console.log(`[Auto-Cyborg] No se encontró contenedor para: ${keywords[0]}`)
     return false
   }
 
-  const targetStr = String(targetValue).trim().toLowerCase()
+  // Asegurar visibilidad en el viewport para interactividad
+  try {
+    container.scrollIntoView({ behavior: 'auto', block: 'center' })
+  } catch (e) {}
+
   const input = container.tagName === 'INPUT' ? container : container.querySelector('input')
   const clickable = container.querySelector('[role="combobox"], [role="button"]') || container
 
-  // Si ya tiene el valor asignado, no repetir
-  const currentText = (container.innerText || container.textContent || input?.value || '').toLowerCase()
-  if (currentText.includes(targetStr)) {
-    console.log(`[Auto-Cyborg] ${keywords[0]} ya tiene "${targetValue}".`)
+  // Si ya tiene alguno de los valores asignados, no repetir
+  const currentText = normalizeStr(container.innerText || container.textContent || input?.value || '')
+  if (targets.some(t => currentText.includes(t))) {
+    console.log(`[Auto-Cyborg] ${keywords[0]} ya tiene "${currentText}".`)
     return true
   }
 
-  console.log(`[Auto-Cyborg] Seleccionando "${targetValue}" en ${keywords[0]}...`)
+  console.log(`[Auto-Cyborg] Seleccionando ${targets.join('/')} en ${keywords[0]}...`)
 
   // 1. Abrir dropdown
   triggerFacebookClick(clickable)
@@ -1356,12 +1487,11 @@ async function selectFacebookDropdownOption(keywords, targetValue, isModel = fal
   if (input) {
     input.focus?.()
     if (!input.readOnly) {
-      // Si no es readOnly, escribir para filtrar reactivamente (Marca, Modelo)
-      setReactInputValue(input, targetValue)
+      // Escribir el primer target para búsqueda reactiva (Marca, Modelo)
+      setReactInputValue(input, targets[0])
       input.dispatchEvent(new Event('input', { bubbles: true }))
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
     } else {
-      // Si es readOnly (como Año), simular clic y flecha abajo
       triggerFacebookClick(input)
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
     }
@@ -1372,45 +1502,55 @@ async function selectFacebookDropdownOption(keywords, targetValue, isModel = fal
 
   if (options.length > 0) {
     let matched = null
-    const baseModel = isModel ? targetStr.split(/[\s\-_]+/)[0] : targetStr
 
-    // Match 1: Coincidencia exacta
-    matched = options.find(opt => {
-      const t = (opt.innerText || opt.textContent || '').trim().toLowerCase()
-      return t === targetStr
-    })
+    for (const targetStr of targets) {
+      const baseModel = isModel ? targetStr.split(/[\s\-_]+/)[0] : targetStr
 
-    // Match 2: Empieza con o el objetivo empieza con la opción
-    if (!matched) {
+      // Match 1: Coincidencia exacta
       matched = options.find(opt => {
-        const t = (opt.innerText || opt.textContent || '').trim().toLowerCase()
-        return t.startsWith(targetStr) || targetStr.startsWith(t)
+        const t = normalizeStr(opt.innerText || opt.textContent || '')
+        return t === targetStr
       })
+
+      // Match 2: Empieza con o el objetivo empieza con la opción
+      if (!matched) {
+        matched = options.find(opt => {
+          const t = normalizeStr(opt.innerText || opt.textContent || '')
+          return t.startsWith(targetStr) || targetStr.startsWith(t)
+        })
+      }
+
+      // Match 3: Modelo base (ej: "Hilux" para "Hilux Srx 4x4 At")
+      if (!matched && isModel && baseModel) {
+        matched = options.find(opt => {
+          const t = normalizeStr(opt.innerText || opt.textContent || '')
+          return t === baseModel || t.startsWith(baseModel) || baseModel.startsWith(t)
+        })
+      }
+
+      // Match 4: Parcial / inclusión
+      if (!matched) {
+        matched = options.find(opt => {
+          const t = normalizeStr(opt.innerText || opt.textContent || '')
+          return t.includes(targetStr) || targetStr.includes(t) || (baseModel && (t.includes(baseModel) || baseModel.includes(t)))
+        })
+      }
+
+      // Match 5: Por tokens si tiene varias palabras
+      if (!matched && targetStr.includes(' ')) {
+        const tokens = targetStr.split(/\s+/).filter(w => w.length >= 3)
+        matched = options.find(opt => {
+          const t = normalizeStr(opt.innerText || opt.textContent || '')
+          return tokens.some(tok => t === tok || t.includes(tok))
+        })
+      }
+
+      if (matched) break
     }
 
-    // Match 3: Modelo base (ej: "Hilux" para "Hilux Srx 4x4 At")
-    if (!matched && isModel && baseModel) {
-      matched = options.find(opt => {
-        const t = (opt.innerText || opt.textContent || '').trim().toLowerCase()
-        return t === baseModel || t.startsWith(baseModel) || baseModel.startsWith(t)
-      })
-    }
-
-    // Match 4: Parcial / inclusión
-    if (!matched) {
-      matched = options.find(opt => {
-        const t = (opt.innerText || opt.textContent || '').trim().toLowerCase()
-        return t.includes(targetStr) || targetStr.includes(t) || (baseModel && (t.includes(baseModel) || baseModel.includes(t)))
-      })
-    }
-
-    // Match 5: Por tokens si tiene varias palabras
-    if (!matched && targetStr.includes(' ')) {
-      const tokens = targetStr.split(/\s+/).filter(w => w.length >= 3)
-      matched = options.find(opt => {
-        const t = (opt.innerText || opt.textContent || '').trim().toLowerCase()
-        return tokens.some(tok => t === tok || t.includes(tok))
-      })
+    // Fallback inteligente para Estado del vehículo (el usuario pidió siempre Excelente): si ninguna coincidió, elegir la 1ª
+    if (!matched && (keywords[0].includes('estado') || keywords[0].includes('condition'))) {
+      matched = options[0]
     }
 
     if (matched) {
@@ -1550,33 +1690,68 @@ async function runFacebookVehicleAutomation(car) {
       await new Promise(r => setTimeout(r, 400))
     }
 
-    // E. Kilometraje
+    // E. Tipo de carrocería (Sedán, SUV, Hatchback, Camioneta, etc.)
+    const bodyTargets = resolveCarBodyStyle(car)
+    await selectFacebookDropdownOption(
+      ['tipo de carrocería', 'tipo de carroceria', 'carrocería', 'carroceria', 'body style'],
+      bodyTargets
+    )
+    await new Promise(r => setTimeout(r, 400))
+
+    // F. Estado del vehículo (Siempre Excelente según solicitud del usuario)
+    await selectFacebookDropdownOption(
+      ['estado del vehículo', 'estado del vehiculo', 'vehicle condition', 'condición', 'condicion', 'estado'],
+      ['excelente', 'excellent']
+    )
+    await new Promise(r => setTimeout(r, 400))
+
+    // G. Tipo de combustible (Nafta/Gasolina, Diésel, GNC, Híbrido, etc.)
+    const fuelTargets = resolveCarFuelType(car)
+    await selectFacebookDropdownOption(
+      ['tipo de combustible', 'fuel type', 'combustible'],
+      fuelTargets
+    )
+    await new Promise(r => setTimeout(r, 400))
+
+    // H. Transmisión (Automática o Manual)
+    const transTargets = resolveCarTransmission(car)
+    await selectFacebookDropdownOption(
+      ['transmisión', 'transmision', 'transmission', 'caja de cambios', 'caja'],
+      transTargets
+    )
+    await new Promise(r => setTimeout(r, 400))
+
+    // I. Kilometraje
     const cleanKms = String(car.kms ? car.kms.replace(/\D/g, '') : '').trim()
     if (cleanKms) {
       fillFacebookTextInput(['kilometraje', 'mileage', 'odómetro', 'kilómetros', 'km'], cleanKms)
     }
 
-    // F. Precio
+    // J. Precio
     const cleanPrice = String(car.precioNumero || (car.precio ? car.precio.replace(/\D/g, '') : '')).trim()
     if (cleanPrice && cleanPrice !== '0') {
       fillFacebookTextInput(['precio', 'price', 'valor'], cleanPrice)
     }
 
-    // G. Descripción
+    // K. Descripción
     if (car.descripcion) {
       fillFacebookDescription(car.descripcion)
     }
 
-    // Verificar si ya se completaron los campos principales (Marca o Año o Precio)
+    // Verificar si ya se completaron los campos principales
     const brandContainer = findFacebookFieldContainer(['marca', 'make', 'brand'])
     const yearContainer = findFacebookFieldContainer(['año', 'ano', 'year'])
     const priceContainer = findFacebookFieldContainer(['precio', 'price'])
+    const conditionContainer = findFacebookFieldContainer(['estado del vehículo', 'estado del vehiculo', 'vehicle condition'])
+    const fuelContainer = findFacebookFieldContainer(['tipo de combustible', 'fuel type'])
     
     const isBrandDone = Boolean(brandContainer?.innerText?.toLowerCase().includes(carBrand.toLowerCase()))
     const isYearDone = Boolean(yearContainer?.innerText?.includes(carYear))
     const isPriceDone = Boolean(priceContainer?.querySelector('input')?.value)
+    const isConditionDone = Boolean(conditionContainer && !normalizeStr(conditionContainer.innerText).includes('estado del vehiculo'))
+    const isFuelDone = Boolean(fuelContainer && !normalizeStr(fuelContainer.innerText).includes('tipo de combustible'))
 
-    if (isBrandDone || isYearDone || isPriceDone) {
+    if (isBrandDone || isYearDone || isPriceDone || isConditionDone || isFuelDone) {
       isFacebookFieldsFilled = true
       actionsDone = true
       showAutoAppBanner(`✅ ¡${car.marca || ''} ${car.modelo || ''} autocompletado con éxito!`, 'success', 5000)
