@@ -1134,18 +1134,18 @@ function normalizeStr(str) {
 function findFacebookFieldContainer(keywords) {
   const kwList = Array.isArray(keywords) ? keywords : [keywords]
 
-  // 1. Prioridad: Elementos con aria-label directo (labels, comboboxes, inputs)
+  // 1. Prioridad: Elementos específicos con aria-label directo (labels, comboboxes, inputs)
   for (const kw of kwList) {
-    const direct = Array.from(document.querySelectorAll(`label[aria-label*="${kw}" i], div[role="combobox"][aria-label*="${kw}" i], [aria-label*="${kw}" i]`))
+    const direct = Array.from(document.querySelectorAll(`label[aria-label*="${kw}" i], div[role="combobox"][aria-label*="${kw}" i], input[aria-label*="${kw}" i]`))
     for (const el of direct) {
-      if (el.tagName === 'LABEL' || el.getAttribute('role') === 'combobox' || el.tagName === 'INPUT' || el.querySelector('input, [role="combobox"]')) {
+      if (el.tagName === 'LABEL' || el.getAttribute('role') === 'combobox' || el.tagName === 'INPUT') {
         return el
       }
     }
   }
 
-  // 2. Prioridad: Buscar en todos los labels y comboboxes por texto visible normalizado
-  const allContainers = Array.from(document.querySelectorAll('label, div[role="combobox"], div[role="button"], div[tabindex="0"]'))
+  // 2. Prioridad: Buscar en labels y comboboxes por coincidencia exacta de primera línea
+  const allContainers = Array.from(document.querySelectorAll('label, div[role="combobox"], div[role="button"]'))
   for (const c of allContainers) {
     const rawTxt = (c.innerText || c.textContent || '').trim()
     const normTxt = normalizeStr(rawTxt)
@@ -1153,34 +1153,45 @@ function findFacebookFieldContainer(keywords) {
 
     for (const kw of kwList) {
       const normKw = normalizeStr(kw)
-      if (
-        normFirstLine === normKw || 
-        normFirstLine.startsWith(normKw) || 
-        (normTxt.length < 90 && (normTxt.startsWith(normKw) || normTxt.includes(normKw)))
-      ) {
+      if (normFirstLine === normKw) {
         return c
       }
     }
   }
 
-  // 3. Prioridad: Buscar cualquier elemento hoja con el texto y escalar a su contenedor
+  // 2b. Coincidencia secundaria si no hubo exacta
+  for (const c of allContainers) {
+    const rawTxt = (c.innerText || c.textContent || '').trim()
+    const normTxt = normalizeStr(rawTxt)
+    const normFirstLine = normTxt.split('\n')[0].trim()
+
+    for (const kw of kwList) {
+      const normKw = normalizeStr(kw)
+      if (normFirstLine.startsWith(normKw) || (normTxt.length < 50 && normTxt.includes(normKw))) {
+        return c
+      }
+    }
+  }
+
+  // 3. Prioridad: Buscar cualquier elemento hoja con el texto y escalar a su contenedor interactivo
   for (const kw of kwList) {
     const normKw = normalizeStr(kw)
     const allLeafNodes = Array.from(document.querySelectorAll('*')).filter(el => {
       if (el.children.length === 0) {
         const text = normalizeStr(el.textContent || '')
-        return text.includes(normKw)
+        return text === normKw || text.startsWith(normKw)
       }
       return false
     })
-    if (allLeafNodes.length > 0) {
-      const leaf = allLeafNodes[0]
+    for (const leaf of allLeafNodes) {
       const parent = leaf.closest('[role="combobox"]') || 
                      leaf.closest('label') || 
                      leaf.closest('[role="button"]') || 
                      leaf.closest('div[tabindex]') || 
                      leaf.parentElement
-      if (parent) return parent
+      if (parent && (parent.tagName === 'LABEL' || parent.getAttribute('role') === 'combobox' || parent.querySelector('input'))) {
+        return parent
+      }
     }
   }
 
@@ -1383,18 +1394,18 @@ function resolveCarBodyStyle(car) {
     return ['suv', 'utilitario', 'camioneta suv']
   }
 
-  // Sedán
+  // Sedán (incluye 408, 508, Cronos, Cruze, Virtus, Vento, Corolla, Logan, etc.)
   if (
     rawBody.includes('sedan') || rawBody.includes('4 puertas') ||
-    /\b(cronos|cruze|virtus|vento|prisma|logan|voyage|bora|elysee|c-elysee|siena|linea|civic|sentra|versa|aveo|symbol)\b/i.test(modelStr)
+    /\b(cronos|cruze|virtus|vento|prisma|logan|voyage|bora|elysee|c-elysee|siena|linea|civic|sentra|versa|aveo|symbol|408|508|fluence|megane|corolla)\b/i.test(modelStr)
   ) {
     return ['sedan', 'sedán']
   }
 
-  // Hatchback
+  // Hatchback (incluye 208, 308, 206, 207, Gol, Onix, Sandero, Polo, Ka, etc.)
   if (
     rawBody.includes('hatch') || rawBody.includes('5 puertas') ||
-    /\b(gol|208|206|207|onix|sandero|polo|etios|ka|clio|fox|fiesta|focus|argo|mobi|up|golf|c3|palio|uno|kwid|yaris|march|tiida|fit)\b/i.test(modelStr)
+    /\b(gol|208|206|207|308|onix|sandero|polo|etios|ka|clio|fox|fiesta|focus|argo|mobi|up|golf|c3|palio|uno|kwid|yaris|march|tiida|fit)\b/i.test(modelStr)
   ) {
     return ['hatchback', 'hatch']
   }
@@ -1411,7 +1422,7 @@ function resolveCarBodyStyle(car) {
     return [rawBody]
   }
 
-  return ['suv', 'sedan', 'hatchback', 'camioneta']
+  return ['sedan', 'sedán', 'hatchback', 'suv', 'camioneta']
 }
 
 // Infiere y resuelve el tipo de combustible a buscar en Facebook
@@ -1448,7 +1459,64 @@ function resolveCarTransmission(car) {
     return ['automatica', 'automática', 'automatic']
   }
 
-  return ['manual']
+  return ['transmision manual', 'manual']
+}
+
+// Escribe texto en un input de React 18 / Facebook simulando teclado humano para activar typeaheads
+async function typeIntoFacebookInput(input, text) {
+  if (!input || !text) return false
+  try {
+    input.focus()
+    input.click()
+    await new Promise(r => setTimeout(r, 80))
+
+    // 1. Limpiar texto existente
+    try {
+      input.select?.()
+      document.execCommand('selectAll', false, null)
+      document.execCommand('delete', false, null)
+    } catch (e) {}
+
+    // 2. Inserción con document.execCommand (dispara eventos de entrada confiables para React)
+    let typed = false
+    try {
+      typed = document.execCommand('insertText', false, text)
+    } catch (e) {}
+
+    // 3. Respaldo directo en prototipo si execCommand no colocó el valor
+    if (!typed || input.value !== text) {
+      setReactInputValue(input, text)
+    }
+
+    // 4. Disparar eventos sintéticos que espera el Typeahead de Facebook
+    input.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, data: text, inputType: 'insertText' }))
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: text.slice(-1), bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keyup', { key: text.slice(-1), bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
+
+    return true
+  } catch (err) {
+    console.warn('[Auto-Cyborg] typeIntoFacebookInput error:', err)
+    return false
+  }
+}
+
+// Marca el checkbox "El título del vehículo no presenta inconvenientes" si está visible
+function checkVehicleTitleCheckbox() {
+  const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'))
+  for (const cb of checkboxes) {
+    if (!cb.checked) {
+      cb.focus?.()
+      cb.click()
+      cb.dispatchEvent(new Event('input', { bubbles: true }))
+      cb.dispatchEvent(new Event('change', { bubbles: true }))
+      console.log('✅ [Auto-Cyborg] Checkbox de título sin inconvenientes marcado.')
+      return true
+    }
+  }
+  return false
 }
 
 // Selecciona una opción en un dropdown o combobox de Facebook Marketplace (Año, Marca, Modelo, Carrocería, Estado, Combustible, etc.)
@@ -1480,17 +1548,15 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
 
   console.log(`[Auto-Cyborg] Seleccionando ${targets.join('/')} en ${keywords[0]}...`)
 
-  // 1. Abrir dropdown
+  // 1. Abrir dropdown o enfocar input
   triggerFacebookClick(clickable)
   triggerFacebookClick(container)
 
   if (input) {
     input.focus?.()
     if (!input.readOnly) {
-      // Escribir el primer target para búsqueda reactiva (Marca, Modelo)
-      setReactInputValue(input, targets[0])
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
+      // Input escribible (Marca, Modelo): teclear con simulación de eventos
+      await typeIntoFacebookInput(input, targets[0])
     } else {
       triggerFacebookClick(input)
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
@@ -1498,7 +1564,7 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
   }
 
   // 2. Esperar opciones en el DOM
-  const options = await waitForFacebookMenuOptions(1200)
+  const options = await waitForFacebookMenuOptions(1400)
 
   if (options.length > 0) {
     let matched = null
@@ -1520,8 +1586,8 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
         })
       }
 
-      // Match 3: Modelo base (ej: "Hilux" para "Hilux Srx 4x4 At")
-      if (!matched && isModel && baseModel) {
+      // Match 3: Modelo base (ej: "408" para "408 Allure")
+      if (!matched && (isModel || baseModel)) {
         matched = options.find(opt => {
           const t = normalizeStr(opt.innerText || opt.textContent || '')
           return t === baseModel || t.startsWith(baseModel) || baseModel.startsWith(t)
@@ -1550,6 +1616,10 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
 
     // Fallback inteligente para Estado del vehículo (el usuario pidió siempre Excelente): si ninguna coincidió, elegir la 1ª
     if (!matched && (keywords[0].includes('estado') || keywords[0].includes('condition'))) {
+      matched = options[0]
+    }
+    // Fallback para Tipo de carrocería si no coincidió con ninguna palabra clave
+    if (!matched && (keywords[0].includes('carrocería') || keywords[0].includes('carroceria') || keywords[0].includes('body'))) {
       matched = options[0]
     }
 
@@ -1643,7 +1713,24 @@ function fillFacebookDescription(desc) {
 async function runFacebookVehicleAutomation(car) {
   let actionsDone = false
 
-  // 1. Subir fotos si aún no se subieron
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 1: TIPO DE VEHÍCULO (DEBE SER LO PRIMERO ABSOLUTO)
+  // Al seleccionar "Coche/camión", Facebook despliega la subventana de autocompletado.
+  // ─────────────────────────────────────────────────────────────────────────
+  const isTypeSelected = isFacebookVehicleTypeSelected()
+  if (!isTypeSelected) {
+    const typeOk = await selectFacebookVehicleType()
+    if (!typeOk && !isFacebookVehicleTypeSelected()) {
+      console.log('[Auto-Cyborg] Esperando selección de Tipo de vehículo antes de continuar...')
+      return false
+    }
+    // Dar tiempo para que Facebook renderice los campos dependientes
+    await new Promise(r => setTimeout(r, 800))
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 2: SUBIR FOTOS (ahora que el tipo de vehículo abrió el formulario)
+  // ─────────────────────────────────────────────────────────────────────────
   if (!isFacebookPhotosInjected) {
     const fileInput = findFacebookFileInput()
     if (fileInput) {
@@ -1654,108 +1741,133 @@ async function runFacebookVehicleAutomation(car) {
           isFacebookPhotosInjected = true
           actionsDone = true
           console.log(`✅ [Auto-Cyborg] ${files.length} fotos inyectadas en Marketplace.`)
+          await new Promise(r => setTimeout(r, 600))
         }
       }
     }
   }
 
-  // 2. Autocompletar campos del formulario
-  if (!isFacebookFieldsFilled) {
-    // A. Tipo de vehículo (requerido por Facebook antes de mostrar Año, Marca, etc.)
-    const typeSelected = await selectFacebookVehicleType()
-    if (typeSelected) {
-      // Dar tiempo para que Facebook renderice los campos dependientes
-      await new Promise(r => setTimeout(r, 600))
-    }
-
-    // B. Año
-    const carYear = car.anio ? String(car.anio).trim() : ''
-    if (carYear) {
-      await selectFacebookDropdownOption(['año', 'ano', 'year', 'fabricación'], carYear)
-      await new Promise(r => setTimeout(r, 400))
-    }
-
-    // C. Marca
-    const carBrand = (car.marca || '').trim()
-    if (carBrand) {
-      await selectFacebookDropdownOption(['marca', 'make', 'brand', 'fabricante'], carBrand)
-      // Dar tiempo a Facebook para que consulte los modelos disponibles
-      await new Promise(r => setTimeout(r, 1000))
-    }
-
-    // D. Modelo
-    const carModel = (car.modelo || '').trim()
-    if (carModel) {
-      await selectFacebookDropdownOption(['modelo', 'model'], carModel, true)
-      await new Promise(r => setTimeout(r, 400))
-    }
-
-    // E. Tipo de carrocería (Sedán, SUV, Hatchback, Camioneta, etc.)
-    const bodyTargets = resolveCarBodyStyle(car)
-    await selectFacebookDropdownOption(
-      ['tipo de carrocería', 'tipo de carroceria', 'carrocería', 'carroceria', 'body style'],
-      bodyTargets
-    )
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 3: AÑO (Screen 2)
+  // ─────────────────────────────────────────────────────────────────────────
+  const carYear = car.anio ? String(car.anio).trim() : ''
+  if (carYear) {
+    await selectFacebookDropdownOption(['año', 'ano', 'year', 'fabricación'], carYear)
     await new Promise(r => setTimeout(r, 400))
+  }
 
-    // F. Estado del vehículo (Siempre Excelente según solicitud del usuario)
-    await selectFacebookDropdownOption(
-      ['estado del vehículo', 'estado del vehiculo', 'vehicle condition', 'condición', 'condicion', 'estado'],
-      ['excelente', 'excellent']
-    )
-    await new Promise(r => setTimeout(r, 400))
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 4: MARCA (Screen 2: crítico, teclear y esperar sugerencias)
+  // ─────────────────────────────────────────────────────────────────────────
+  const carBrand = (car.marca || '').trim()
+  if (carBrand) {
+    await selectFacebookDropdownOption(['marca', 'make', 'brand', 'fabricante'], carBrand)
+    // Espera para que Facebook consulte y cargue el catálogo de modelos de esta marca
+    await new Promise(r => setTimeout(r, 1500))
+  }
 
-    // G. Tipo de combustible (Nafta/Gasolina, Diésel, GNC, Híbrido, etc.)
-    const fuelTargets = resolveCarFuelType(car)
-    await selectFacebookDropdownOption(
-      ['tipo de combustible', 'fuel type', 'combustible'],
-      fuelTargets
-    )
-    await new Promise(r => setTimeout(r, 400))
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 5: MODELO (Screen 2: buscar modelo base ej. "408" y modelo completo)
+  // ─────────────────────────────────────────────────────────────────────────
+  const carModel = (car.modelo || '').trim()
+  if (carModel) {
+    const baseModel = carModel.split(/[\s\-_]+/)[0]
+    await selectFacebookDropdownOption(['modelo', 'model'], [baseModel, carModel], true)
+    await new Promise(r => setTimeout(r, 500))
+  }
 
-    // H. Transmisión (Automática o Manual)
-    const transTargets = resolveCarTransmission(car)
-    await selectFacebookDropdownOption(
-      ['transmisión', 'transmision', 'transmission', 'caja de cambios', 'caja'],
-      transTargets
-    )
-    await new Promise(r => setTimeout(r, 400))
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 6: PRECIO (Screen 3)
+  // ─────────────────────────────────────────────────────────────────────────
+  const cleanPrice = String(car.precioNumero || (car.precio ? car.precio.replace(/\D/g, '') : '')).trim()
+  if (cleanPrice && cleanPrice !== '0') {
+    fillFacebookTextInput(['precio', 'price', 'valor'], cleanPrice)
+    await new Promise(r => setTimeout(r, 300))
+  }
 
-    // I. Kilometraje
-    const cleanKms = String(car.kms ? car.kms.replace(/\D/g, '') : '').trim()
-    if (cleanKms) {
-      fillFacebookTextInput(['kilometraje', 'mileage', 'odómetro', 'kilómetros', 'km'], cleanKms)
-    }
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 7: TIPO DE CARROCERÍA (Screen 3)
+  // ─────────────────────────────────────────────────────────────────────────
+  const bodyTargets = resolveCarBodyStyle(car)
+  await selectFacebookDropdownOption(
+    ['tipo de carrocería', 'tipo de carroceria', 'carrocería', 'carroceria', 'body style'],
+    bodyTargets
+  )
+  await new Promise(r => setTimeout(r, 400))
 
-    // J. Precio
-    const cleanPrice = String(car.precioNumero || (car.precio ? car.precio.replace(/\D/g, '') : '')).trim()
-    if (cleanPrice && cleanPrice !== '0') {
-      fillFacebookTextInput(['precio', 'price', 'valor'], cleanPrice)
-    }
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 8: CHECKBOX "El título del vehículo no presenta inconvenientes" (Screen 4)
+  // ─────────────────────────────────────────────────────────────────────────
+  checkVehicleTitleCheckbox()
 
-    // K. Descripción
-    if (car.descripcion) {
-      fillFacebookDescription(car.descripcion)
-    }
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 9: ESTADO DEL VEHÍCULO (Screen 4: SIEMPRE EXCELENTE)
+  // ─────────────────────────────────────────────────────────────────────────
+  await selectFacebookDropdownOption(
+    ['estado del vehículo', 'estado del vehiculo', 'vehicle condition', 'condición', 'condicion', 'estado'],
+    ['excelente', 'excellent']
+  )
+  await new Promise(r => setTimeout(r, 400))
 
-    // Verificar si ya se completaron los campos principales
-    const brandContainer = findFacebookFieldContainer(['marca', 'make', 'brand'])
-    const yearContainer = findFacebookFieldContainer(['año', 'ano', 'year'])
-    const priceContainer = findFacebookFieldContainer(['precio', 'price'])
-    const conditionContainer = findFacebookFieldContainer(['estado del vehículo', 'estado del vehiculo', 'vehicle condition'])
-    const fuelContainer = findFacebookFieldContainer(['tipo de combustible', 'fuel type'])
-    
-    const isBrandDone = Boolean(brandContainer?.innerText?.toLowerCase().includes(carBrand.toLowerCase()))
-    const isYearDone = Boolean(yearContainer?.innerText?.includes(carYear))
-    const isPriceDone = Boolean(priceContainer?.querySelector('input')?.value)
-    const isConditionDone = Boolean(conditionContainer && !normalizeStr(conditionContainer.innerText).includes('estado del vehiculo'))
-    const isFuelDone = Boolean(fuelContainer && !normalizeStr(fuelContainer.innerText).includes('tipo de combustible'))
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 10: TIPO DE COMBUSTIBLE (Screen 4: Gasolina/Nafta, Diésel, etc.)
+  // ─────────────────────────────────────────────────────────────────────────
+  const fuelTargets = resolveCarFuelType(car)
+  await selectFacebookDropdownOption(
+    ['tipo de combustible', 'fuel type', 'combustible'],
+    fuelTargets
+  )
+  await new Promise(r => setTimeout(r, 400))
 
-    if (isBrandDone || isYearDone || isPriceDone || isConditionDone || isFuelDone) {
-      isFacebookFieldsFilled = true
-      actionsDone = true
-      showAutoAppBanner(`✅ ¡${car.marca || ''} ${car.modelo || ''} autocompletado con éxito!`, 'success', 5000)
-    }
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 11: TRANSMISIÓN (Screen 4: Manual o Automática)
+  // ─────────────────────────────────────────────────────────────────────────
+  const transTargets = resolveCarTransmission(car)
+  await selectFacebookDropdownOption(
+    ['transmisión', 'transmision', 'transmission', 'caja de cambios', 'caja'],
+    transTargets
+  )
+  await new Promise(r => setTimeout(r, 400))
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 12: KILOMETRAJE
+  // ─────────────────────────────────────────────────────────────────────────
+  const cleanKms = String(car.kms ? car.kms.replace(/\D/g, '') : '').trim()
+  if (cleanKms) {
+    fillFacebookTextInput(['kilometraje', 'mileage', 'odómetro', 'kilómetros', 'km'], cleanKms)
+    await new Promise(r => setTimeout(r, 300))
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 13: ÚLTIMO LA DESCRIPCIÓN (después de completar todos los campos)
+  // ─────────────────────────────────────────────────────────────────────────
+  if (car.descripcion) {
+    fillFacebookDescription(car.descripcion)
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // VERIFICACIÓN FINAL: sólo dar por completado si Marca, Modelo, Año y Precio están listos
+  // ─────────────────────────────────────────────────────────────────────────
+  const brandContainer = findFacebookFieldContainer(['marca', 'make', 'brand'])
+  const modelContainer = findFacebookFieldContainer(['modelo', 'model'])
+  const priceContainer = findFacebookFieldContainer(['precio', 'price'])
+  const yearContainer = findFacebookFieldContainer(['año', 'ano', 'year'])
+  
+  const isBrandDone = Boolean(brandContainer && (
+    (brandContainer.innerText || '').toLowerCase().includes(carBrand.toLowerCase()) ||
+    (brandContainer.querySelector('input')?.value || '').toLowerCase().includes(carBrand.toLowerCase())
+  ))
+  const isModelDone = Boolean(modelContainer && (
+    (modelContainer.innerText || '').toLowerCase().includes(carModel.toLowerCase()) ||
+    (modelContainer.querySelector('input')?.value || '').toLowerCase().includes(carModel.toLowerCase())
+  ))
+  const isYearDone = Boolean(yearContainer?.innerText?.includes(carYear))
+  const isPriceDone = Boolean(priceContainer?.querySelector('input')?.value)
+
+  if (isBrandDone && isModelDone && isPriceDone && isYearDone) {
+    isFacebookFieldsFilled = true
+    actionsDone = true
+    showAutoAppBanner(`✅ ¡${car.marca || ''} ${car.modelo || ''} autocompletado con éxito!`, 'success', 5000)
   }
 
   return actionsDone
