@@ -70,6 +70,10 @@ function getPayloadFromHash() {
 }
 
 function showAutoAppBanner(message, type = 'info', duration = 8000) {
+  if (window.location.hostname.includes('facebook.com')) {
+    // En Facebook Marketplace no mostrar recuadros flotantes en pantalla por solicitud del usuario
+    return
+  }
   const existing = document.getElementById('autoapp-cyborg-banner')
   if (existing) existing.remove()
 
@@ -934,6 +938,8 @@ function injectWhatsAppHUD(car, info) {
 let cachedFacebookFiles = []
 let isFacebookPhotosInjected = false
 let isFacebookFieldsFilled = false
+let isFacebookVehicleTypeDone = false
+let isFacebookAutomationRunning = false
 let facebookAutomationLoopInterval = null
 
 // Ayudante para React 18: dispara el setter nativo del prototipo para que React actualice su estado
@@ -1260,18 +1266,22 @@ function findFacebookVehicleTypeTrigger() {
   }
 
   // 2. Buscar por texto visible dentro de comboboxes, botones o labels
-  const candidates = Array.from(document.querySelectorAll('label, div[role="combobox"], div[role="button"], div[tabindex="0"]'))
+  const candidates = Array.from(document.querySelectorAll('label, div[role="combobox"], div[role="button"], div[tabindex="0"], div[aria-haspopup]'))
   for (const c of candidates) {
-    const txt = (c.innerText || c.textContent || '').trim().toLowerCase()
+    const txt = normalizeStr(c.innerText || c.textContent || '')
     const firstLine = txt.split('\n')[0].trim()
-    if (firstLine.includes('tipo de veh') || txt.includes('tipo de vehículo') || txt.includes('tipo de vehiculo') || txt.includes('vehicle type')) {
+    if (firstLine.includes('tipo de veh') || txt.includes('tipo de vehiculo') || txt.includes('vehicle type')) {
       return c.querySelector('[role="combobox"], [role="button"]') || c
     }
   }
 
   // 3. Buscar cualquier elemento hoja con el texto exacto o parcial
   const allLeafNodes = Array.from(document.querySelectorAll('*')).filter(el => {
-    return el.children.length === 0 && (el.textContent || '').trim().toLowerCase().includes('tipo de veh')
+    if (el.children.length === 0) {
+      const text = normalizeStr(el.textContent || '')
+      return text.includes('tipo de veh') || text.includes('vehicle type')
+    }
+    return false
   })
   if (allLeafNodes.length > 0) {
     const leaf = allLeafNodes[0]
@@ -1287,18 +1297,15 @@ function findFacebookVehicleTypeTrigger() {
 
 // Verifica si el tipo de vehículo ya fue seleccionado previamente
 function isFacebookVehicleTypeSelected() {
-  // A. Si campos subsiguientes (Año, Marca) ya están presentes en el DOM
-  const hasSubsequentFields = Boolean(
-    document.querySelector('[aria-label*="año" i], [aria-label*="ano" i], [aria-label*="year" i]') ||
-    document.querySelector('[aria-label*="marca" i], [aria-label*="make" i]')
-  )
-  if (hasSubsequentFields) return true
+  // 1. Si en memoria ya confirmamos la selección en esta sesión
+  if (isFacebookVehicleTypeDone) return true
 
-  // B. Si el disparador ya muestra un valor como "Automóvil" o "Auto" o "Camioneta"
+  // 2. Si el disparador ya muestra un valor seleccionado como "Coche/camión", "Auto", etc.
   const trigger = findFacebookVehicleTypeTrigger()
   if (trigger) {
-    const txt = (trigger.innerText || trigger.textContent || '').trim().toLowerCase()
-    if (!txt.includes('tipo de veh') && (txt.includes('auto') || txt.includes('camion') || txt.includes('coche'))) {
+    const txt = normalizeStr(trigger.innerText || trigger.textContent || '')
+    if (txt.includes('coche') || txt.includes('camion') || txt.includes('auto') || txt.includes('automovil') || txt.includes('car')) {
+      isFacebookVehicleTypeDone = true
       return true
     }
   }
@@ -1321,53 +1328,61 @@ async function selectFacebookVehicleType() {
 
   console.log('🚗 [Auto-Cyborg] Abriendo menú de Tipo de vehículo...')
 
-  // 1. Clic en el elemento interactivo y sus contenedores
-  triggerFacebookClick(trigger)
-  if (trigger.parentElement) {
-    triggerFacebookClick(trigger.parentElement)
-  }
-  const comboboxChild = trigger.querySelector('[role="combobox"], [role="button"]')
-  if (comboboxChild) {
-    triggerFacebookClick(comboboxChild)
-  }
-  const inputChild = trigger.querySelector('input')
-  if (inputChild) {
-    triggerFacebookClick(inputChild)
-  }
+  // Scroll a la vista y clic único
+  try {
+    trigger.scrollIntoView({ behavior: 'auto', block: 'center' })
+  } catch (e) {}
 
-  // Teclado por si Facebook requiere ArrowDown/Space para desplegar
-  trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
+  const clickable = trigger.querySelector('[role="combobox"], [role="button"]') || trigger
+  triggerFacebookClick(clickable)
+  clickable.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
 
-  // 2. Esperar opciones en el DOM
-  const options = await waitForFacebookMenuOptions(1500)
+  // Esperar opciones en el DOM
+  const options = await waitForFacebookMenuOptions(1800)
   console.log(`[Auto-Cyborg] Opciones encontradas para Tipo de vehículo: ${options.length}`)
 
+  let chosen = null
+
   if (options.length > 0) {
-    // Buscar la opción de automóvil / camioneta / coche
-    let chosen = options.find(opt => {
-      const t = (opt.innerText || opt.textContent || '').trim().toLowerCase()
+    // Buscar la opción de coche / camión / auto
+    chosen = options.find(opt => {
+      const t = normalizeStr(opt.innerText || opt.textContent || '')
       return (
-        t.includes('auto') ||
-        t.includes('camion') ||
         t.includes('coche') ||
+        t.includes('camion') ||
+        t.includes('auto') ||
         t.includes('car') ||
-        (t.includes('vehículo') && !t.includes('moto')) ||
         (t.includes('vehiculo') && !t.includes('moto'))
       )
     })
 
-    // Fallback: Si no coincide por texto, en Facebook Marketplace la 1ª opción siempre es autos/camionetas
+    // Fallback 1: en Facebook Marketplace la 1ª opción siempre es Coche/camión
     if (!chosen) {
       chosen = options[0]
     }
+  }
 
-    if (chosen) {
-      console.log(`🎯 [Auto-Cyborg] Clic en Tipo de vehículo: "${chosen.innerText || chosen.textContent}"`)
-      triggerFacebookClick(chosen)
-      chosen.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
-      await new Promise(r => setTimeout(r, 800))
-      return true
+  // Fallback 2: buscar cualquier nodo con texto coche/camion fuera del trigger
+  if (!chosen) {
+    const allCocheEls = Array.from(document.querySelectorAll('*')).filter(el => {
+      if (el.children.length === 0 && el !== trigger && !trigger.contains(el)) {
+        const t = normalizeStr(el.textContent || '')
+        return t === 'coche/camion' || t === 'coche / camion' || t.startsWith('coche/camion') || t.startsWith('coche')
+      }
+      return false
+    })
+    if (allCocheEls.length > 0) {
+      chosen = allCocheEls[0].closest('[role="option"], [role="button"], div[tabindex]') || allCocheEls[0]
     }
+  }
+
+  if (chosen) {
+    console.log(`🎯 [Auto-Cyborg] Clic en Tipo de vehículo: "${chosen.innerText || chosen.textContent}"`)
+    triggerFacebookClick(chosen)
+    chosen.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
+    isFacebookVehicleTypeDone = true
+    await new Promise(r => setTimeout(r, 1200))
+    return true
   }
 
   return false
@@ -1505,6 +1520,7 @@ async function typeIntoFacebookInput(input, text) {
 
 // Marca el checkbox "El título del vehículo no presenta inconvenientes" si está visible
 function checkVehicleTitleCheckbox() {
+  // 1. Inputs nativos
   const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'))
   for (const cb of checkboxes) {
     if (!cb.checked) {
@@ -1516,6 +1532,39 @@ function checkVehicleTitleCheckbox() {
       return true
     }
   }
+
+  // 2. Elementos con role="checkbox"
+  const ariaCbs = Array.from(document.querySelectorAll('[role="checkbox"]'))
+  for (const cb of ariaCbs) {
+    const isChecked = cb.getAttribute('aria-checked') === 'true' || cb.getAttribute('data-checked') === 'true'
+    if (!isChecked) {
+      cb.focus?.()
+      triggerFacebookClick(cb)
+      console.log('✅ [Auto-Cyborg] Checkbox de título marcado (role="checkbox").')
+      return true
+    }
+  }
+
+  // 3. Buscar contenedor por texto descriptivo
+  const candidates = Array.from(document.querySelectorAll('label, div, span')).filter(el => {
+    const txt = normalizeStr(el.innerText || el.textContent || '')
+    return (txt.includes('titulo del vehiculo') || txt.includes('inconvenientes')) && txt.length < 150
+  })
+  for (const c of candidates) {
+    const cb = c.querySelector('input[type="checkbox"], [role="checkbox"]') || 
+               c.closest('label')?.querySelector('input, [role="checkbox"]') ||
+               c.parentElement?.querySelector('input, [role="checkbox"]')
+    if (cb) {
+      const isChecked = cb.checked || cb.getAttribute?.('aria-checked') === 'true'
+      if (!isChecked) {
+        cb.focus?.()
+        triggerFacebookClick(cb)
+        console.log('✅ [Auto-Cyborg] Checkbox de título marcado (por texto).')
+        return true
+      }
+    }
+  }
+
   return false
 }
 
@@ -1527,7 +1576,6 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
 
   const container = findFacebookFieldContainer(keywords)
   if (!container) {
-    console.log(`[Auto-Cyborg] No se encontró contenedor para: ${keywords[0]}`)
     return false
   }
 
@@ -1537,30 +1585,26 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
   } catch (e) {}
 
   const input = container.tagName === 'INPUT' ? container : container.querySelector('input')
-  const clickable = container.querySelector('[role="combobox"], [role="button"]') || container
+  const clickable = container.querySelector('[role="combobox"], [role="button"]') || (input?.readOnly ? input : null) || container
 
   // Si ya tiene alguno de los valores asignados, no repetir
   const currentText = normalizeStr(container.innerText || container.textContent || input?.value || '')
   if (targets.some(t => currentText.includes(t))) {
-    console.log(`[Auto-Cyborg] ${keywords[0]} ya tiene "${currentText}".`)
     return true
   }
 
   console.log(`[Auto-Cyborg] Seleccionando ${targets.join('/')} en ${keywords[0]}...`)
 
   // 1. Abrir dropdown o enfocar input
-  triggerFacebookClick(clickable)
-  triggerFacebookClick(container)
-
-  if (input) {
+  if (input && !input.readOnly) {
+    // Input escribible (Marca, Modelo): teclear con simulación de eventos
     input.focus?.()
-    if (!input.readOnly) {
-      // Input escribible (Marca, Modelo): teclear con simulación de eventos
-      await typeIntoFacebookInput(input, targets[0])
-    } else {
-      triggerFacebookClick(input)
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
-    }
+    await typeIntoFacebookInput(input, targets[0])
+  } else {
+    // Dropdown / Combobox de solo lectura (Año, Carrocería, Estado, Combustible, Transmisión):
+    clickable.focus?.()
+    triggerFacebookClick(clickable)
+    clickable.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }))
   }
 
   // 2. Esperar opciones en el DOM
@@ -1614,12 +1658,21 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
       if (matched) break
     }
 
-    // Fallback inteligente para Estado del vehículo (el usuario pidió siempre Excelente): si ninguna coincidió, elegir la 1ª
+    // Fallbacks inteligentes si ninguna coincidió por texto exacto:
+    // Estado del vehículo -> siempre 'Excelente' (1ª opción en Facebook)
     if (!matched && (keywords[0].includes('estado') || keywords[0].includes('condition'))) {
       matched = options[0]
     }
-    // Fallback para Tipo de carrocería si no coincidió con ninguna palabra clave
-    if (!matched && (keywords[0].includes('carrocería') || keywords[0].includes('carroceria') || keywords[0].includes('body'))) {
+    // Tipo de combustible -> 'Gasolina' / 'Nafta' (1ª opción en Facebook)
+    if (!matched && (keywords[0].includes('combustible') || keywords[0].includes('fuel'))) {
+      matched = options[0]
+    }
+    // Transmisión -> 'Transmisión manual' (1ª opción en Facebook)
+    if (!matched && (keywords[0].includes('transmisi') || keywords[0].includes('caja'))) {
+      matched = options[0]
+    }
+    // Tipo de carrocería -> 1ª opción si no coincidió
+    if (!matched && (keywords[0].includes('carrocer') || keywords[0].includes('body'))) {
       matched = options[0]
     }
 
@@ -1717,15 +1770,14 @@ async function runFacebookVehicleAutomation(car) {
   // PASO 1: TIPO DE VEHÍCULO (DEBE SER LO PRIMERO ABSOLUTO)
   // Al seleccionar "Coche/camión", Facebook despliega la subventana de autocompletado.
   // ─────────────────────────────────────────────────────────────────────────
-  const isTypeSelected = isFacebookVehicleTypeSelected()
-  if (!isTypeSelected) {
+  if (!isFacebookVehicleTypeSelected()) {
     const typeOk = await selectFacebookVehicleType()
     if (!typeOk && !isFacebookVehicleTypeSelected()) {
       console.log('[Auto-Cyborg] Esperando selección de Tipo de vehículo antes de continuar...')
       return false
     }
     // Dar tiempo para que Facebook renderice los campos dependientes
-    await new Promise(r => setTimeout(r, 800))
+    await new Promise(r => setTimeout(r, 1200))
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1799,6 +1851,7 @@ async function runFacebookVehicleAutomation(car) {
   // PASO 8: CHECKBOX "El título del vehículo no presenta inconvenientes" (Screen 4)
   // ─────────────────────────────────────────────────────────────────────────
   checkVehicleTitleCheckbox()
+  await new Promise(r => setTimeout(r, 300))
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 9: ESTADO DEL VEHÍCULO (Screen 4: SIEMPRE EXCELENTE)
@@ -1814,7 +1867,7 @@ async function runFacebookVehicleAutomation(car) {
   // ─────────────────────────────────────────────────────────────────────────
   const fuelTargets = resolveCarFuelType(car)
   await selectFacebookDropdownOption(
-    ['tipo de combustible', 'fuel type', 'combustible'],
+    ['tipo de combustible', 'tipo de combustible ', 'fuel type', 'combustible'],
     fuelTargets
   )
   await new Promise(r => setTimeout(r, 400))
@@ -1867,46 +1920,57 @@ async function runFacebookVehicleAutomation(car) {
   if (isBrandDone && isModelDone && isPriceDone && isYearDone) {
     isFacebookFieldsFilled = true
     actionsDone = true
-    showAutoAppBanner(`✅ ¡${car.marca || ''} ${car.modelo || ''} autocompletado con éxito!`, 'success', 5000)
+    console.log(`✅ [Auto-Cyborg 360] ¡${car.marca || ''} ${car.modelo || ''} autocompletado con éxito en Facebook Marketplace!`)
   }
 
   return actionsDone
 }
 
-// Bucle de supervisión silencioso en Facebook Marketplace (sin recuadros flotantes)
+// Bucle de supervisión silencioso en Facebook Marketplace (sin recuadros flotantes y con control de concurrencia)
 function startFacebookAutomationLoop(car) {
-  if (facebookAutomationLoopInterval) clearInterval(facebookAutomationLoopInterval)
+  if (facebookAutomationLoopInterval) {
+    clearInterval(facebookAutomationLoopInterval)
+    facebookAutomationLoopInterval = null
+  }
 
   let ticks = 0
   const maxTicks = 60 // ~60 segundos máximo
 
   facebookAutomationLoopInterval = setInterval(async () => {
+    if (isFacebookAutomationRunning) {
+      return // Evitar solapamiento de ticks concurrentes
+    }
+
     ticks++
     if (ticks > maxTicks) {
       clearInterval(facebookAutomationLoopInterval)
+      facebookAutomationLoopInterval = null
       console.log('⏱️ [Auto-Cyborg 360] Bucle de supervisión de Facebook Marketplace finalizado.')
       return
     }
 
+    isFacebookAutomationRunning = true
     try {
       await runFacebookVehicleAutomation(car)
 
       // Si las fotos y campos están listos, detener el bucle
       if (isFacebookPhotosInjected && isFacebookFieldsFilled) {
         clearInterval(facebookAutomationLoopInterval)
+        facebookAutomationLoopInterval = null
         console.log('🎉 [Auto-Cyborg 360] Publicación de Facebook Marketplace completada al 100%!')
       }
     } catch (err) {
       console.warn('[Auto-Cyborg 360] Error en tick de Facebook Marketplace:', err)
+    } finally {
+      isFacebookAutomationRunning = false
     }
-  }, 1000)
+  }, 1200)
 }
 
 // Inicialización de la automatización en Facebook Marketplace
 async function initFacebookMarketplaceAutomation(carData) {
   console.log('🤖 [Auto-Cyborg 360] Iniciando flujo automático de Facebook Marketplace con:', carData)
   const car = carData
-  const title = `${car.marca || ''} ${car.modelo || ''} ${car.anio || ''}`.trim()
 
   // 1. Copiar descripción al portapapeles preventivamente
   if (car.descripcion) {
@@ -1916,13 +1980,10 @@ async function initFacebookMarketplaceAutomation(carData) {
     } catch (e) {}
   }
 
-  // 2. Notificación discreta en la parte superior (sin recuadro lateral invasivo)
-  showAutoAppBanner(`⚡ Auto-Cyborg: Autocompletando ${title}...`, 'info', 4000)
-
-  // 3. Iniciar descarga preventiva de fotos en memoria
+  // 2. Iniciar descarga preventiva de fotos en memoria
   prepareFacebookFiles(car)
 
-  // 4. Iniciar bucle de automatización DOM
+  // 3. Iniciar bucle de automatización DOM silencioso
   startFacebookAutomationLoop(car)
 }
 
