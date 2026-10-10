@@ -1,4 +1,4 @@
-# 🧩 Auto-Cyborg 360 Chrome Extension (v1.2.0)
+# 🧩 Auto-Cyborg 360 Chrome Extension (v1.2.1)
 
 Companion browser automation extension for automotive sales advisors and social media managers. Enables single-click DOM autocompletion across Facebook Marketplace, Instagram, and WhatsApp Web directly from AutoApp inventory.
 

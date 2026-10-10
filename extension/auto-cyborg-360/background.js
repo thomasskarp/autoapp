@@ -3,13 +3,13 @@ console.log('🤖 [Auto-Cyborg 360] Background service worker iniciado.')
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('✅ [Auto-Cyborg 360] Extensión instalada con éxito.')
-  chrome.storage.local.set({ status: 'ACTIVE', version: '1.2.0' })
+  chrome.storage.local.set({ status: 'ACTIVE', version: '1.2.1' })
 })
 
 // Escuchar mensajes externos desde la web de AutoApp
 chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
   if (request.type === 'PING') {
-    sendResponse({ status: 'PONG', version: '1.2.0' })
+    sendResponse({ status: 'PONG', version: '1.2.1' })
     return true
   }
 
