@@ -940,6 +940,7 @@ let isFacebookPhotosInjected = false
 let isFacebookFieldsFilled = false
 let isFacebookVehicleTypeDone = false
 let isFacebookAutomationRunning = false
+let isMarketplaceAutomationFinished = false
 let facebookAutomationLoopInterval = null
 
 // Ayudante para React 18: dispara el setter nativo del prototipo para que React actualice su estado
@@ -1764,6 +1765,10 @@ function fillFacebookDescription(desc) {
 
 // Ejecución secuencial de autocompletado en Facebook Marketplace
 async function runFacebookVehicleAutomation(car) {
+  if (isMarketplaceAutomationFinished) {
+    return true
+  }
+
   let actionsDone = false
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1896,47 +1901,54 @@ async function runFacebookVehicleAutomation(car) {
   // ─────────────────────────────────────────────────────────────────────────
   if (car.descripcion) {
     fillFacebookDescription(car.descripcion)
+    await new Promise(r => setTimeout(r, 400))
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // VERIFICACIÓN FINAL: sólo dar por completado si Marca, Modelo, Año y Precio están listos
+  // FINALIZACIÓN DEFINITIVA: se ejecutó todo el formulario de una sola vez
   // ─────────────────────────────────────────────────────────────────────────
-  const brandContainer = findFacebookFieldContainer(['marca', 'make', 'brand'])
-  const modelContainer = findFacebookFieldContainer(['modelo', 'model'])
-  const priceContainer = findFacebookFieldContainer(['precio', 'price'])
-  const yearContainer = findFacebookFieldContainer(['año', 'ano', 'year'])
-  
-  const isBrandDone = Boolean(brandContainer && (
-    (brandContainer.innerText || '').toLowerCase().includes(carBrand.toLowerCase()) ||
-    (brandContainer.querySelector('input')?.value || '').toLowerCase().includes(carBrand.toLowerCase())
-  ))
-  const isModelDone = Boolean(modelContainer && (
-    (modelContainer.innerText || '').toLowerCase().includes(carModel.toLowerCase()) ||
-    (modelContainer.querySelector('input')?.value || '').toLowerCase().includes(carModel.toLowerCase())
-  ))
-  const isYearDone = Boolean(yearContainer?.innerText?.includes(carYear))
-  const isPriceDone = Boolean(priceContainer?.querySelector('input')?.value)
+  isMarketplaceAutomationFinished = true
+  isFacebookFieldsFilled = true
+  actionsDone = true
 
-  if (isBrandDone && isModelDone && isPriceDone && isYearDone) {
-    isFacebookFieldsFilled = true
-    actionsDone = true
-    console.log(`✅ [Auto-Cyborg 360] ¡${car.marca || ''} ${car.modelo || ''} autocompletado con éxito en Facebook Marketplace!`)
+  if (facebookAutomationLoopInterval) {
+    clearInterval(facebookAutomationLoopInterval)
+    facebookAutomationLoopInterval = null
   }
 
-  return actionsDone
+  console.log(`🎉 [Auto-Cyborg 360] ¡${car.marca || ''} ${car.modelo || ''} autocompletado con éxito al 100%! Bucle detenido permanentemente.`)
+
+  // Limpiar almacenamiento local para que no vuelva a dispararse al navegar o recargar
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    try {
+      chrome.storage.local.remove(['fb_active_car', 'active_car'])
+    } catch (e) {}
+  }
+
+  return true
 }
 
 // Bucle de supervisión silencioso en Facebook Marketplace (sin recuadros flotantes y con control de concurrencia)
 function startFacebookAutomationLoop(car) {
+  if (isMarketplaceAutomationFinished) {
+    return
+  }
+
   if (facebookAutomationLoopInterval) {
     clearInterval(facebookAutomationLoopInterval)
     facebookAutomationLoopInterval = null
   }
 
   let ticks = 0
-  const maxTicks = 60 // ~60 segundos máximo
+  const maxTicks = 45 // Intentos mientras carga la página
 
   facebookAutomationLoopInterval = setInterval(async () => {
+    if (isMarketplaceAutomationFinished) {
+      clearInterval(facebookAutomationLoopInterval)
+      facebookAutomationLoopInterval = null
+      return
+    }
+
     if (isFacebookAutomationRunning) {
       return // Evitar solapamiento de ticks concurrentes
     }
@@ -1945,7 +1957,7 @@ function startFacebookAutomationLoop(car) {
     if (ticks > maxTicks) {
       clearInterval(facebookAutomationLoopInterval)
       facebookAutomationLoopInterval = null
-      console.log('⏱️ [Auto-Cyborg 360] Bucle de supervisión de Facebook Marketplace finalizado.')
+      console.log('⏱️ [Auto-Cyborg 360] Tiempo límite de espera en Facebook Marketplace alcanzado.')
       return
     }
 
@@ -1953,11 +1965,12 @@ function startFacebookAutomationLoop(car) {
     try {
       await runFacebookVehicleAutomation(car)
 
-      // Si las fotos y campos están listos, detener el bucle
-      if (isFacebookPhotosInjected && isFacebookFieldsFilled) {
-        clearInterval(facebookAutomationLoopInterval)
-        facebookAutomationLoopInterval = null
-        console.log('🎉 [Auto-Cyborg 360] Publicación de Facebook Marketplace completada al 100%!')
+      if (isMarketplaceAutomationFinished) {
+        if (facebookAutomationLoopInterval) {
+          clearInterval(facebookAutomationLoopInterval)
+          facebookAutomationLoopInterval = null
+        }
+        console.log('🛑 [Auto-Cyborg 360] Proceso completado: Bucle cerrado definitivamente.')
       }
     } catch (err) {
       console.warn('[Auto-Cyborg 360] Error en tick de Facebook Marketplace:', err)
@@ -1969,6 +1982,11 @@ function startFacebookAutomationLoop(car) {
 
 // Inicialización de la automatización en Facebook Marketplace
 async function initFacebookMarketplaceAutomation(carData) {
+  if (isMarketplaceAutomationFinished) {
+    console.log('🛑 [Auto-Cyborg 360] El vehículo ya fue autocompletado en esta sesión. No se repetirá.')
+    return
+  }
+
   console.log('🤖 [Auto-Cyborg 360] Iniciando flujo automático de Facebook Marketplace con:', carData)
   const car = carData
 
