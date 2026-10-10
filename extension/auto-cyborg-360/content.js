@@ -1250,7 +1250,7 @@ async function waitForFacebookMenuOptions(timeoutMs = 1500) {
     if (list.length > 0) {
       return list
     }
-    await new Promise(r => setTimeout(r, 80))
+    await new Promise(r => setTimeout(r, 40))
   }
 
   return []
@@ -1382,11 +1382,39 @@ async function selectFacebookVehicleType() {
     triggerFacebookClick(chosen)
     chosen.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
     isFacebookVehicleTypeDone = true
-    await new Promise(r => setTimeout(r, 1200))
+    await waitForFacebookVehicleForm(2000)
     return true
   }
 
   return false
+}
+
+// Espera reactivamente a que aparezca el formulario tras seleccionar Tipo de vehículo
+async function waitForFacebookVehicleForm(timeoutMs = 2000) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (findFacebookFileInput() || findFacebookFieldContainer(['año', 'ano', 'year'])) {
+      await new Promise(r => setTimeout(r, 120))
+      return true
+    }
+    await new Promise(r => setTimeout(r, 40))
+  }
+  return false
+}
+
+// Espera reactivamente a que el catálogo de modelos esté listo tras seleccionar Marca
+async function waitForFacebookModelReady(timeoutMs = 1500) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    const modelContainer = findFacebookFieldContainer(['modelo', 'model'])
+    const inp = modelContainer?.querySelector('input') || (modelContainer?.tagName === 'INPUT' ? modelContainer : null)
+    if (inp && !inp.disabled && inp.getAttribute('aria-disabled') !== 'true') {
+      await new Promise(r => setTimeout(r, 150))
+      return true
+    }
+    await new Promise(r => setTimeout(r, 50))
+  }
+  return true
 }
 
 // Infiere y resuelve la lista de tipos de carrocería a buscar
@@ -1681,7 +1709,7 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
       console.log(`🎯 [Auto-Cyborg] Opción elegida para ${keywords[0]}: "${matched.innerText || matched.textContent}"`)
       triggerFacebookClick(matched)
       matched.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
-      await new Promise(r => setTimeout(r, 400))
+      await new Promise(r => setTimeout(r, 150))
       return true
     }
   }
@@ -1690,7 +1718,7 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
   if (input && !input.readOnly) {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
     input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, bubbles: true }))
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise(r => setTimeout(r, 150))
   }
 
   return false
@@ -1781,8 +1809,7 @@ async function runFacebookVehicleAutomation(car) {
       console.log('[Auto-Cyborg] Esperando selección de Tipo de vehículo antes de continuar...')
       return false
     }
-    // Dar tiempo para que Facebook renderice los campos dependientes
-    await new Promise(r => setTimeout(r, 1200))
+    await waitForFacebookVehicleForm(1500)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1798,7 +1825,7 @@ async function runFacebookVehicleAutomation(car) {
           isFacebookPhotosInjected = true
           actionsDone = true
           console.log(`✅ [Auto-Cyborg] ${files.length} fotos inyectadas en Marketplace.`)
-          await new Promise(r => setTimeout(r, 600))
+          await new Promise(r => setTimeout(r, 300))
         }
       }
     }
@@ -1810,7 +1837,7 @@ async function runFacebookVehicleAutomation(car) {
   const carYear = car.anio ? String(car.anio).trim() : ''
   if (carYear) {
     await selectFacebookDropdownOption(['año', 'ano', 'year', 'fabricación'], carYear)
-    await new Promise(r => setTimeout(r, 400))
+    await new Promise(r => setTimeout(r, 150))
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1819,8 +1846,8 @@ async function runFacebookVehicleAutomation(car) {
   const carBrand = (car.marca || '').trim()
   if (carBrand) {
     await selectFacebookDropdownOption(['marca', 'make', 'brand', 'fabricante'], carBrand)
-    // Espera para que Facebook consulte y cargue el catálogo de modelos de esta marca
-    await new Promise(r => setTimeout(r, 1500))
+    // Espera reactiva dinámica a que Facebook cargue el catálogo de modelos
+    await waitForFacebookModelReady(1500)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1830,7 +1857,7 @@ async function runFacebookVehicleAutomation(car) {
   if (carModel) {
     const baseModel = carModel.split(/[\s\-_]+/)[0]
     await selectFacebookDropdownOption(['modelo', 'model'], [baseModel, carModel], true)
-    await new Promise(r => setTimeout(r, 500))
+    await new Promise(r => setTimeout(r, 200))
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1839,7 +1866,7 @@ async function runFacebookVehicleAutomation(car) {
   const cleanPrice = String(car.precioNumero || (car.precio ? car.precio.replace(/\D/g, '') : '')).trim()
   if (cleanPrice && cleanPrice !== '0') {
     fillFacebookTextInput(['precio', 'price', 'valor'], cleanPrice)
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise(r => setTimeout(r, 150))
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1850,13 +1877,13 @@ async function runFacebookVehicleAutomation(car) {
     ['tipo de carrocería', 'tipo de carroceria', 'carrocería', 'carroceria', 'body style'],
     bodyTargets
   )
-  await new Promise(r => setTimeout(r, 400))
+  await new Promise(r => setTimeout(r, 150))
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 8: CHECKBOX "El título del vehículo no presenta inconvenientes" (Screen 4)
   // ─────────────────────────────────────────────────────────────────────────
   checkVehicleTitleCheckbox()
-  await new Promise(r => setTimeout(r, 300))
+  await new Promise(r => setTimeout(r, 100))
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 9: ESTADO DEL VEHÍCULO (Screen 4: SIEMPRE EXCELENTE)
@@ -1865,7 +1892,7 @@ async function runFacebookVehicleAutomation(car) {
     ['estado del vehículo', 'estado del vehiculo', 'vehicle condition', 'condición', 'condicion', 'estado'],
     ['excelente', 'excellent']
   )
-  await new Promise(r => setTimeout(r, 400))
+  await new Promise(r => setTimeout(r, 150))
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 10: TIPO DE COMBUSTIBLE (Screen 4: Gasolina/Nafta, Diésel, etc.)
@@ -1875,7 +1902,7 @@ async function runFacebookVehicleAutomation(car) {
     ['tipo de combustible', 'tipo de combustible ', 'fuel type', 'combustible'],
     fuelTargets
   )
-  await new Promise(r => setTimeout(r, 400))
+  await new Promise(r => setTimeout(r, 150))
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 11: TRANSMISIÓN (Screen 4: Manual o Automática)
@@ -1885,7 +1912,7 @@ async function runFacebookVehicleAutomation(car) {
     ['transmisión', 'transmision', 'transmission', 'caja de cambios', 'caja'],
     transTargets
   )
-  await new Promise(r => setTimeout(r, 400))
+  await new Promise(r => setTimeout(r, 150))
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 12: KILOMETRAJE
@@ -1893,7 +1920,7 @@ async function runFacebookVehicleAutomation(car) {
   const cleanKms = String(car.kms ? car.kms.replace(/\D/g, '') : '').trim()
   if (cleanKms) {
     fillFacebookTextInput(['kilometraje', 'mileage', 'odómetro', 'kilómetros', 'km'], cleanKms)
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise(r => setTimeout(r, 150))
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1901,7 +1928,7 @@ async function runFacebookVehicleAutomation(car) {
   // ─────────────────────────────────────────────────────────────────────────
   if (car.descripcion) {
     fillFacebookDescription(car.descripcion)
-    await new Promise(r => setTimeout(r, 400))
+    await new Promise(r => setTimeout(r, 150))
   }
 
   // ─────────────────────────────────────────────────────────────────────────
