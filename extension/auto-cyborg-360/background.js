@@ -3,13 +3,13 @@ console.log('🤖 [Auto-Cyborg 360] Background service worker iniciado.')
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('✅ [Auto-Cyborg 360] Extensión instalada con éxito.')
-  chrome.storage.local.set({ status: 'ACTIVE', version: '1.0.0' })
+  chrome.storage.local.set({ status: 'ACTIVE', version: '1.2.0' })
 })
 
 // Escuchar mensajes externos desde la web de AutoApp
 chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
   if (request.type === 'PING') {
-    sendResponse({ status: 'PONG', version: '1.0.0' })
+    sendResponse({ status: 'PONG', version: '1.2.0' })
     return true
   }
 
@@ -36,6 +36,11 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
 // Escuchar solicitudes internas desde content script para descargar imágenes sin restricciones de CSP
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'FETCH_IMAGE_BASE64' && request.url) {
+    if (!/^https?:\/\//i.test(request.url)) {
+      sendResponse({ success: false, error: 'Protocolo de URL no permitido' })
+      return false
+    }
+
     fetch(request.url)
       .then(res => {
         if (!res.ok) throw new Error('HTTP ' + res.status)

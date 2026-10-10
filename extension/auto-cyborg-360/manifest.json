@@ -15,19 +15,18 @@
   "permissions": [
     "storage",
     "activeTab",
-    "clipboardWrite",
-    "clipboardRead"
+    "clipboardWrite"
   ],
   "host_permissions": [
-    "<all_urls>",
     "*://www.facebook.com/*",
     "*://web.whatsapp.com/*",
     "*://www.instagram.com/*",
+    "https://*.supabase.co/*",
+    "https://*.mlstatic.com/*",
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",
-    "*://*.vercel.app/*",
-    "*://autoapp.vercel.app/*",
-    "https://*.vercel.app/*"
+    "https://*.vercel.app/*",
+    "https://autoapp.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -50,9 +49,8 @@
         "*://www.instagram.com/*",
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*",
-        "*://*.vercel.app/*",
-        "*://autoapp.vercel.app/*",
-        "https://*.vercel.app/*"
+        "https://*.vercel.app/*",
+        "https://autoapp.vercel.app/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
