@@ -8,7 +8,7 @@ const ALLOWED_VEHICLE_FIELDS = new Set([
   'Km', 'km', 'kms', 'Estado', 'estado', 'Tipo_Combustible', 'combustible',
   'Transmision', 'transmision', 'Tipo_Carroceria', 'Estado_Vehiculo',
   'Tipo_Vehiculo', 'Descripcion', 'descripcion', 'FOTO_PORTADA', 'FOTOS_EXTRA',
-  'photoLinks', 'Moneda', 'Patente', 'Color', 'agency_id'
+  'photoLinks', 'Moneda', 'Patente', 'Color'
 ])
 
 export async function POST(req: NextRequest) {

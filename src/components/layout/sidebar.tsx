@@ -4,18 +4,16 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  LayoutDashboard, Car, Users, Megaphone, BarChart3,
+  Car, Users, Megaphone,
   Settings, LogOut, Zap
 } from 'lucide-react'
 
 import { useInfoPrice } from '@/context/info-price-context'
 
 const navItems = [
-  { href: '/',              icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/stock',         icon: Car,             label: 'Stock' },
   { href: '/crm',           icon: Users,           label: 'CRM' },
   { href: '/publicaciones', icon: Megaphone,       label: 'Publicaciones' },
-  { href: '/reportes',      icon: BarChart3,       label: 'Reportes' },
 ]
 
 import { useState, useEffect } from 'react'

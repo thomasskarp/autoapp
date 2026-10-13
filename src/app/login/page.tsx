@@ -48,7 +48,7 @@ export default function LoginPage() {
       }
 
       // Redirigir al panel principal
-      window.location.replace('/')
+      window.location.replace('/stock')
     } catch (err: any) {
       console.error('[Login] Error:', err)
       setError(err?.message || 'Error de conexión con el servidor.')

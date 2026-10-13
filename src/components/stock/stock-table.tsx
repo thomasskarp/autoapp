@@ -318,16 +318,31 @@ export function StockTable({
   }
 
   const handleDelete = async (id: string, patente: string, isOkm: boolean) => {
-    if (!confirm(`¿Dar de baja el vehículo ${patente}? Esta acción no se puede deshacer.`)) return
+    if (!confirm(`¿Eliminar el vehículo ${patente || 'seleccionado'} del stock definitivamente? Esta acción no se puede deshacer.`)) return
     setLoadingId(id)
     setVehicleList(prev => prev.filter(v => String(v.ID) !== String(id)))
-    const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
-    await supabase.from(tableName).delete().eq('ID', id)
     try {
-      await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
-    } catch (e) {}
-    router.refresh()
-    setLoadingId(null)
+      const res = await fetch('/api/vehicles/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, isOkm }),
+      })
+      if (!res.ok) {
+        throw new Error('Error al eliminar vehículo en el servidor')
+      }
+    } catch (e) {
+      console.error('Error al eliminar vehículo:', e)
+      const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
+      try {
+        await supabase.from(tableName).delete().eq('ID', id)
+      } catch {}
+      try {
+        await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
+      } catch {}
+    } finally {
+      router.refresh()
+      setLoadingId(null)
+    }
   }
 
   return (

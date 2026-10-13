@@ -1,12 +1,65 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Vehicle } from '@/lib/supabase/types'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Save, Loader2, Image as ImageIcon, Sparkles, Check } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Image as ImageIcon, Sparkles, Check, Upload, Trash2, Star } from 'lucide-react'
 import Link from 'next/link'
-import { formatPrice, formatNumberDots, parseNumberFromDots } from '@/lib/utils'
+import { formatPrice, formatNumberDots, parseNumberFromDots, getAllVehiclePhotos } from '@/lib/utils'
+
+async function compressImage(file: File): Promise<File> {
+  if (typeof window === 'undefined' || !file.type.startsWith('image/') || file.type.includes('svg') || file.type.includes('gif')) {
+    return file
+  }
+  // Si pesa menos de 1MB, subir directo
+  if (file.size < 1024 * 1024) {
+    return file
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const maxDim = 1920
+        let { width, height } = img
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width)
+            width = maxDim
+          } else {
+            width = Math.round((width * maxDim) / height)
+            height = maxDim
+          }
+        }
+
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return resolve(file)
+
+        ctx.drawImage(img, 0, 0, width, height)
+        canvas.toBlob(
+          (blob) => {
+            if (!blob || blob.size >= file.size) {
+              return resolve(file)
+            }
+            const cleanName = file.name.replace(/\.[^/.]+$/, '') + '.jpg'
+            resolve(new File([blob], cleanName, { type: 'image/jpeg' }))
+          },
+          'image/jpeg',
+          0.85
+        )
+      }
+      img.onerror = () => resolve(file)
+      img.src = e.target?.result as string
+    }
+    reader.onerror = () => resolve(file)
+    reader.readAsDataURL(file)
+  })
+}
 
 interface Props {
   initialData?: Partial<Vehicle>
@@ -41,8 +94,93 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
   const [loadingInfoAuto, setLoadingInfoAuto] = useState(false)
   const [selectedInfoPrice, setSelectedInfoPrice] = useState<number | null>(null)
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [photos, setPhotos] = useState<string[]>(() => getAllVehiclePhotos(initialData as any))
+  const [uploadingPhotos, setUploadingPhotos] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<string>('')
+  const [photoError, setPhotoError] = useState<string | null>(null)
+
   const router = useRouter()
   const supabase = createClient()
+
+  // Sincronizar fotos iniciales si cambia initialData
+  useEffect(() => {
+    if (initialData?.FOTO_PORTADA || initialData?.FOTOS_EXTRA) {
+      const parsed = getAllVehiclePhotos(initialData as any)
+      if (parsed.length > 0) {
+        setPhotos(parsed)
+      }
+    }
+  }, [initialData?.FOTO_PORTADA, initialData?.FOTOS_EXTRA])
+
+  const updatePhotos = (newPhotos: string[]) => {
+    setPhotos(newPhotos)
+    setFormData(prev => ({
+      ...prev,
+      FOTO_PORTADA: newPhotos[0] || '',
+      FOTOS_EXTRA: newPhotos.slice(1).join(', '),
+    }))
+  }
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files
+    if (!fileList || fileList.length === 0) return
+
+    setUploadingPhotos(true)
+    setPhotoError(null)
+
+    const filesArray = Array.from(fileList)
+    const total = filesArray.length
+    const uploadedUrls: string[] = []
+
+    try {
+      for (let i = 0; i < total; i++) {
+        setUploadProgress(`Cargando foto ${i + 1} de ${total}...`)
+        const file = filesArray[i]
+        const optimized = await compressImage(file)
+
+        const uploadData = new FormData()
+        uploadData.append('file', optimized)
+
+        const res = await fetch('/api/vehicles/upload-photos', {
+          method: 'POST',
+          body: uploadData,
+        })
+
+        const data = await res.json()
+        if (!res.ok || !data.success || !data.urls || data.urls.length === 0) {
+          throw new Error(data.error || `Error al subir la imagen ${file.name}`)
+        }
+
+        uploadedUrls.push(...data.urls)
+      }
+
+      const combined = [...photos, ...uploadedUrls]
+      updatePhotos(combined)
+    } catch (err: any) {
+      console.error('Error al subir fotos:', err)
+      setPhotoError(err.message || 'Error al cargar fotos automáticamente.')
+    } finally {
+      setUploadingPhotos(false)
+      setUploadProgress('')
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleRemovePhoto = (indexToRemove: number) => {
+    const updated = photos.filter((_, idx) => idx !== indexToRemove)
+    updatePhotos(updated)
+  }
+
+  const handleSetPortada = (index: number) => {
+    if (index === 0 || index >= photos.length) return
+    const target = photos[index]
+    const remaining = photos.filter((_, idx) => idx !== index)
+    const updated = [target, ...remaining]
+    updatePhotos(updated)
+  }
 
   // Fetch InfoAuto matching versions dynamically
   useEffect(() => {
@@ -76,17 +214,25 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
     setLoading(true)
     setError(null)
 
-    if (!formData.Patente || !formData.Marca || !formData.Modelo) {
-      setError('La patente, marca y modelo son campos obligatorios.')
+    if (!formData.Marca?.trim() || !formData.Modelo?.trim()) {
+      setError('La marca y el modelo son campos obligatorios.')
       setLoading(false)
       return
     }
 
     try {
+      const cleanPatente = formData.Patente?.trim() || ''
+
       if (isEditing && initialData.ID) {
+        const updatePayload = {
+          ...formData,
+          Patente: cleanPatente,
+        }
+        delete (updatePayload as any).agency_id
+
         const { error: err } = await supabase
           .from('DB_STOCK')
-          .update(formData)
+          .update(updatePayload)
           .eq('ID', initialData.ID)
 
         if (err) throw err
@@ -94,9 +240,10 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
         const newVehicle = {
           ...formData,
           ID: crypto.randomUUID(),
-          agency_id: 'a1000000-0000-0000-0000-000000000001',
+          Patente: cleanPatente,
           createdAt: new Date().toISOString(),
         }
+        delete (newVehicle as any).agency_id
 
         const { error: err } = await supabase
           .from('DB_STOCK')
@@ -124,9 +271,9 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
         <Link href="/stock" className="btn-ghost">
           <ArrowLeft size={16} /> Volver al stock
         </Link>
-        <button type="submit" className="btn-primary" disabled={loading}>
-          {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          {loading ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Crear Vehículo')}
+        <button type="submit" className="btn-primary" disabled={loading || uploadingPhotos}>
+          {loading || uploadingPhotos ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          {uploadingPhotos ? 'Cargando fotos...' : loading ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Crear Vehículo')}
         </button>
       </div>
 
@@ -144,13 +291,14 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: '#8B8FA8' }}>Patente / Dominio *</label>
+              <label className="block text-xs font-medium mb-1" style={{ color: '#8B8FA8' }}>
+                Patente / Dominio <span className="text-[10px] text-[#8B8FA8] font-normal">(Opcional)</span>
+              </label>
               <input
                 className="input uppercase tracking-wider font-mono font-bold"
-                placeholder="ABC 123"
+                placeholder="Ej: ABC 123 (opcional)"
                 value={formData.Patente ?? ''}
                 onChange={e => handleChange('Patente', e.target.value.toUpperCase())}
-                required
               />
             </div>
             <div>
@@ -385,35 +533,111 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
 
         {/* Card 4: Multimedia y Fotos */}
         <div className="card p-5 flex flex-col gap-4">
-          <h3 className="text-base font-semibold" style={{ color: '#E8EAED' }}>🖼️ Fotos y Galería</h3>
-
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: '#8B8FA8' }}>URL Foto de Portada</label>
-            <input
-              className="input"
-              placeholder="https://..."
-              value={formData.FOTO_PORTADA ?? ''}
-              onChange={e => handleChange('FOTO_PORTADA', e.target.value)}
-            />
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold" style={{ color: '#E8EAED' }}>🖼️ Fotos y Galería</h3>
+            {photos.length > 0 && (
+              <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: '#1F2337', color: '#9CA3AF' }}>
+                {photos.length} {photos.length === 1 ? 'foto' : 'fotos'}
+              </span>
+            )}
           </div>
 
-          {formData.FOTO_PORTADA && (
-            <div className="w-full h-36 rounded-lg overflow-hidden border flex items-center justify-center"
-              style={{ borderColor: '#1F2337', background: '#1A1D28' }}>
-              <img src={formData.FOTO_PORTADA} alt="Preview" className="w-full h-full object-cover" />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleFilesSelected}
+          />
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingPhotos}
+            className="w-full border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 transition-all cursor-pointer group"
+            style={{
+              borderColor: uploadingPhotos ? '#FACC15' : '#2A2F45',
+              background: '#0F1117',
+            }}
+          >
+            {uploadingPhotos ? (
+              <>
+                <Loader2 size={28} className="animate-spin" style={{ color: '#FACC15' }} />
+                <span className="text-sm font-medium" style={{ color: '#FACC15' }}>
+                  {uploadProgress || 'Cargando fotos automáticamente...'}
+                </span>
+                <span className="text-xs" style={{ color: '#8B8FA8' }}>
+                  Aguardá un momento mientras se suben a la nube...
+                </span>
+              </>
+            ) : (
+              <>
+                <div
+                  className="w-12 h-12 rounded-full flex items-center justify-center transition-transform group-hover:scale-110"
+                  style={{ background: '#FACC1520', color: '#FACC15' }}
+                >
+                  <Upload size={22} />
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-sm font-semibold" style={{ color: '#F3F4F6' }}>
+                    {photos.length > 0 ? 'Seleccionar más fotos' : 'Seleccionar fotos'}
+                  </span>
+                  <span className="text-xs" style={{ color: '#8B8FA8' }}>
+                    Abrir documentos o descargas para cargarlas automáticamente
+                  </span>
+                </div>
+              </>
+            )}
+          </button>
+
+          {photoError && (
+            <div className="p-3 text-xs rounded-lg border" style={{ background: '#EF444415', color: '#EF4444', borderColor: '#EF444430' }}>
+              {photoError}
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: '#8B8FA8' }}>URLs Fotos Adicionales (separadas por coma)</label>
-            <textarea
-              rows={3}
-              className="input font-mono text-xs"
-              placeholder="https://foto1.jpg, https://foto2.jpg..."
-              value={formData.FOTOS_EXTRA ?? ''}
-              onChange={e => handleChange('FOTOS_EXTRA', e.target.value)}
-            />
-          </div>
+          {photos.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
+              {photos.map((url, idx) => (
+                <div
+                  key={`${url}-${idx}`}
+                  className="group relative rounded-lg overflow-hidden border aspect-video flex items-center justify-center bg-black/40"
+                  style={{ borderColor: idx === 0 ? '#FACC15' : '#1F2337' }}
+                >
+                  <img
+                    src={url}
+                    alt={`Foto ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  {idx === 0 ? (
+                    <span
+                      className="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded shadow flex items-center gap-1"
+                      style={{ background: '#FACC15', color: '#000' }}
+                    >
+                      <Star size={10} className="fill-current" /> Portada
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSetPortada(idx)}
+                      className="absolute top-2 left-2 text-[10px] font-medium px-2 py-0.5 rounded bg-black/75 hover:bg-black text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      Hacer portada
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePhoto(idx)}
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-red-600/80 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Eliminar foto"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </form>

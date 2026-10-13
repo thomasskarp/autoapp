@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Users, UserPlus, Key, Mail, Trash2, Eye, EyeOff,
   CheckCircle2, AlertCircle, Loader2, Sparkles, Copy, Check, RefreshCw,
-  Puzzle, ExternalLink, Download
+  Puzzle, ExternalLink, Download, LogOut
 } from 'lucide-react'
 
 interface Vendedor {
@@ -20,6 +20,7 @@ interface Vendedor {
 
 export default function ConfiguracionPage() {
   const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'vendedor' | null>(null)
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>('')
   const [checkingRole, setCheckingRole] = useState(true)
 
   const [vendedores, setVendedores] = useState<Vendedor[]>([])
@@ -68,6 +69,7 @@ export default function ConfiguracionPage() {
       const { data: { user } } = await supabase.auth.getUser()
 
       if (user) {
+        setCurrentUserEmail(user.email || '')
         const rawRole = user.user_metadata?.role?.toLowerCase()
         const isAdmin = user.email === 'okmmotorschaco@gmail.com' || user.email === 'tomas.skarp@gmail.com' || rawRole === 'admin' || rawRole === 'administrador'
         const role: 'admin' | 'vendedor' = isAdmin ? 'admin' : 'vendedor'
@@ -83,6 +85,16 @@ export default function ConfiguracionPage() {
       setCurrentUserRole('vendedor')
     } finally {
       setCheckingRole(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      const supabase = createClient()
+      await supabase.auth.signOut().catch(() => {})
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    } finally {
+      window.location.href = '/login'
     }
   }
 
@@ -547,69 +559,54 @@ export default function ConfiguracionPage() {
           </>
         )}
 
-        {/* Automatización de Publicaciones (Visible para TODOS: Vendedor y Admin) */}
-        <div className="card p-6 border border-[#1F2337] bg-[#13161F] flex flex-col gap-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[#1F2337]">
+        {/* Extensión Auto-Cyborg 360 & Sesión Activa */}
+        <div className="card p-5 border border-[#1F2337] bg-[#13161F] flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-[#FACC1515] border border-[#FACC1530] flex items-center justify-center text-[#FACC15] shrink-0">
-                <Puzzle size={24} />
+              <div className="w-10 h-10 rounded-xl bg-[#FACC1515] border border-[#FACC1530] flex items-center justify-center text-[#FACC15] shrink-0">
+                <Puzzle size={22} />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-black text-white">Extensión Auto-Cyborg 360</h3>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#10B98115] text-[#10B981] border border-[#10B98130]">v1.2.0 Producción</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#10B98115] text-[#10B981] border border-[#10B98130]">v1.2.0</span>
                 </div>
                 <p className="text-xs text-[#8B8FA8] mt-0.5">
-                  Automatiza la subida de fotos, precio y ficha técnica en Facebook Marketplace y WhatsApp Estados en 1 clic.
+                  Publicación automática en Facebook Marketplace y WhatsApp Estados.
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <a
-                href="/auto-cyborg-360.zip"
-                download="auto-cyborg-360.zip"
-                className="btn-primary px-5 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
-                <Download size={16} />
-                <span>Descargar Extensión (.ZIP)</span>
-              </a>
-
-              <a
-                href="https://chromewebstore.google.com/detail/dev-auto-cyborg-360/kjfjedgjkehndonpbgkffilaidcdpjob?hl=es"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2.5 rounded-xl border border-[#262B40] bg-[#161923] hover:bg-[#1E2333] text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer">
-                <ExternalLink size={15} />
-                <span>Chrome Web Store</span>
-              </a>
-            </div>
+            <a
+              href="https://chromewebstore.google.com/detail/dev-auto-cyborg-360/kjfjedgjkehndonpbgkffilaidcdpjob?hl=es"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary px-5 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+              <ExternalLink size={15} />
+              <span>Chrome Web Store</span>
+            </a>
           </div>
 
-          {/* Guía rápida de instalación de 3 pasos para el vendedor */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-2">
-              <div className="w-7 h-7 rounded-lg bg-[#2563EB20] text-[#60A5FA] font-black text-xs flex items-center justify-center">1</div>
-              <h4 className="text-xs font-black text-white">Descargar y Descomprimir</h4>
-              <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                Hacé clic en <strong>Descargar Extensión (.ZIP)</strong> y descomprimí la carpeta en tu computadora (ej: en Descargas o Escritorio).
-              </p>
+          {/* Estado de la cuenta y botón para salir */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#1F2337]">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#10B98120] text-[#10B981] border border-[#10B98140] flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-[#10B981]" />
+                Cuenta activada
+              </span>
+              <div className="flex items-center gap-1.5 text-xs font-mono text-white bg-[#0F1117] px-3 py-1.5 rounded-lg border border-[#1F2337]">
+                <Mail size={13} className="text-[#8B8FA8]" />
+                <span>{currentUserEmail || 'Cargando...'}</span>
+              </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-2">
-              <div className="w-7 h-7 rounded-lg bg-[#FACC1520] text-[#FACC15] font-black text-xs flex items-center justify-center">2</div>
-              <h4 className="text-xs font-black text-white">Abrir Extensiones en Chrome</h4>
-              <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                En Chrome o Brave escribí <code className="bg-[#1A1F2C] px-1 py-0.5 rounded text-[#FACC15]">chrome://extensions</code> y activá el interruptor <strong>"Modo de desarrollador"</strong> (arriba a la derecha).
-              </p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-[#0F1117] border border-[#1F2337] flex flex-col gap-2">
-              <div className="w-7 h-7 rounded-lg bg-[#10B98120] text-[#10B981] font-black text-xs flex items-center justify-center">3</div>
-              <h4 className="text-xs font-black text-white">Cargar Carpeta</h4>
-              <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
-                Tocá <strong>"Cargar descomprimida"</strong> y seleccioná la carpeta recién descomprimida. ¡Listo! Ya podés publicar autos en 1 clic.
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-[#EF4444] bg-[#EF444415] hover:bg-[#EF444425] border border-[#EF444430] flex items-center gap-1.5 transition-all cursor-pointer">
+              <LogOut size={13} />
+              <span>Salir de esta cuenta</span>
+            </button>
           </div>
         </div>
 

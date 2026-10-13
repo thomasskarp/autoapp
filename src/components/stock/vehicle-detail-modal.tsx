@@ -290,29 +290,33 @@ ${cuotasStr ? `💳 Financiación:\n${cuotasStr}\n` : ''}
 
   const handleDeleteVehicle = async () => {
     if (!vehicle) return
-    const isOkm = vehicle.is_okm_table ?? (vehicle.Tipo_Vehiculo || '').toLowerCase() === '0km'
     const name = vehicleName(vehicle)
     const patente = vehicle.Patente ? ` (${vehicle.Patente})` : ''
 
-    if (!confirm(`¿Dar de baja el vehículo ${name}${patente} del stock? Esta acción no se puede deshacer.`)) {
+    if (!confirm(`¿Eliminar el vehículo ${name}${patente} del stock definitivamente? Esta acción no se puede deshacer.`)) {
       return
     }
 
     try {
       setIsDeleting(true)
-      const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
-      const { error } = await supabase.from(tableName).delete().eq('ID', vehicle.ID)
-      if (error) throw error
 
-      try {
-        await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
-      } catch (e) {}
+      const res = await fetch('/api/vehicles/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: vehicle.ID }),
+      })
 
-      onClose()
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'No se pudo eliminar el vehículo')
+      }
+
       if (onDeleted) onDeleted(vehicle.ID)
+      onClose()
       router.refresh()
     } catch (err: any) {
-      alert('Error al dar de baja el vehículo: ' + (err.message || 'Error desconocido'))
+      console.error('Error al eliminar vehículo:', err)
+      alert('Error al eliminar el vehículo: ' + (err.message || 'Error desconocido'))
     } finally {
       setIsDeleting(false)
     }
@@ -377,15 +381,15 @@ ${cuotasStr ? `💳 Financiación:\n${cuotasStr}\n` : ''}
               </span>
             )}
 
-            {/* Botón Eliminar Vehículo */}
+            {/* Botón Eliminar Vehículo (Único botón) */}
             <button
               type="button"
               onClick={handleDeleteVehicle}
               disabled={isDeleting}
-              title="Dar de baja / Eliminar este vehículo del stock"
-              className="h-9 px-3 rounded-xl flex items-center gap-1.5 transition-all text-xs font-extrabold text-[#EF4444] bg-[#EF444415] hover:bg-[#EF444425] border border-[#EF444430] cursor-pointer disabled:opacity-50">
+              title="Eliminar este vehículo del stock definitivamente"
+              className="h-9 px-3 rounded-xl flex items-center gap-1.5 transition-all text-xs font-bold text-[#EF4444] bg-[#EF444415] hover:bg-[#EF444425] border border-[#EF444430] cursor-pointer disabled:opacity-50">
               {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              <span className="hidden sm:inline">Eliminar</span>
+              <span>{isDeleting ? 'Eliminando...' : 'Eliminar'}</span>
             </button>
 
             <button onClick={onClose}
@@ -736,17 +740,6 @@ ${cuotasStr ? `💳 Financiación:\n${cuotasStr}\n` : ''}
                 <span>{downloading ? 'Guardando...' : 'Descargar Fotos'}</span>
               </button>
             </div>
-
-            {/* Botón Dar de Baja Vehículo */}
-            <button
-              type="button"
-              onClick={handleDeleteVehicle}
-              disabled={isDeleting}
-              title="Dar de baja este vehículo del stock definitivamente"
-              className="w-full py-2.5 px-3 rounded-xl border border-[#EF444430] bg-[#EF444410] hover:bg-[#EF444420] text-[#EF4444] text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-1">
-              {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              <span>Dar de baja vehículo del stock</span>
-            </button>
 
           </div>
 
