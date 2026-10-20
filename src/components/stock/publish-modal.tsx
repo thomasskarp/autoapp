@@ -400,8 +400,8 @@ export function parameterizeTextToTemplate(raw: string, veh: Vehicle | null): st
   if (cuotasFormatted && res.includes(cuotasFormatted)) {
     res = res.replace(cuotasFormatted, '{CUOTAS}')
   } else {
-    // Detectar renglones de "- Entrega $... + ... cuotas..."
-    res = res.replace(/(?:-\s*Entrega\s*\$[\d\.]+\s*\+\s*\d+\s*cuotas[^\n]*(?:\r?\n)?)+/gi, '{CUOTAS}\n')
+    // Detectar renglones de "- Capital a financiar $..." o "- Entrega $..."
+    res = res.replace(/(?:-\s*(?:Capital\s+a\s+financiar|Financia\s+hasta|Entrega)\s*\$[\d\.]+[^\n]*(?:\r?\n)?)+/gi, '{CUOTAS}\n')
   }
 
   return res

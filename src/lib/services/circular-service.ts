@@ -541,12 +541,10 @@ export function calculateEntrega(precioVenta: number, maxFinanciar: number): num
 }
 
 /**
- * Formatea las cuotas para la publicación con el cálculo exacto de entrega sobre el precio del auto y el máx capital a financiar:
- * Precio de venta - max capital a financiar = entrega según cuotas
+ * Formatea las cuotas para la publicación con el cálculo del capital a financiar y cuotas:
  * Ej:
- * - Entrega $45.900.000 + 24 cuotas de $690.000
- * - Entrega $43.700.000 + 18 cuotas de $1.090.000
- * - Entrega $26.800.000 + 12 cuotas de $3.090.000
+ * - Capital a financiar $25.000.000 en 12 cuotas de $2.083.333
+ * - Capital a financiar $18.000.000 en 18 cuotas de $1.000.000
  */
 export function formatCuotasForPublication(
   circular: CircularConfig | null,
@@ -558,19 +556,13 @@ export function formatCuotasForPublication(
   const validRows = circular.rows.filter(r => r.maxFinanciar > 0 && r.cantCuotas > 0)
   if (validRows.length === 0) return ''
 
-  const isPrice = typeof precioVentaOrIndex === 'number' && precioVentaOrIndex > 100
-  const pVenta = isPrice ? precioVentaOrIndex : 0
-
   return validRows
     .map(r => {
       const cuotaVal = r.costoCuota > 0 ? r.costoCuota : calculateCostoCuota(r.maxFinanciar, r.cantCuotas)
       const costoFormatted = formatNumberDots(cuotaVal)
-      if (pVenta > 0) {
-        const entrega = calculateEntrega(pVenta, r.maxFinanciar)
-        const entregaFormatted = formatNumberDots(entrega)
-        return `- Entrega $${entregaFormatted} + ${r.cantCuotas} cuotas de $${costoFormatted}`
-      }
-      return `- Financia hasta $${formatNumberDots(r.maxFinanciar)} en ${r.cantCuotas} cuotas de $${costoFormatted}`
+      const maxFinanciarFormatted = formatNumberDots(r.maxFinanciar)
+      const cuotasLabel = r.cantCuotas === 1 ? '1 cuota' : `${r.cantCuotas} cuotas`
+      return `- Capital a financiar $${maxFinanciarFormatted} en ${cuotasLabel} de $${costoFormatted}`
     })
     .join('\n')
 }
