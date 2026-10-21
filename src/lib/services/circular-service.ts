@@ -497,6 +497,11 @@ export function saveCircular(config: CircularConfig): void {
 
     // Disparar evento para que otros componentes se actualicen reactivamente
     window.dispatchEvent(new CustomEvent('circular-storage-updated', { detail: { key, config } }))
+
+    // Sincronizar inmediatamente en la nube (Supabase) para todos los navegadores y vendedores
+    pushCircularesToCloud(circulares).catch(err => {
+      console.warn('[CircularService] Error sincronizando en Supabase:', err)
+    })
   } catch (err) {
     console.error('[CircularService] Error saving circular:', err)
   }
@@ -518,10 +523,121 @@ export function deleteCircular(
       delete circulares[key]
       localStorage.setItem(STORAGE_KEY, JSON.stringify(circulares))
       window.dispatchEvent(new CustomEvent('circular-storage-updated', { detail: { key, deleted: true } }))
+
+      // Sincronizar eliminación en la nube (Supabase)
+      pushCircularesToCloud(circulares).catch(err => {
+        console.warn('[CircularService] Error sincronizando eliminación en Supabase:', err)
+      })
     }
   } catch (err) {
     console.error('[CircularService] Error deleting circular:', err)
   }
+}
+
+let isSyncing = false
+let lastSyncTime = 0
+
+/**
+ * Envía las circulares completas a la nube (Supabase)
+ */
+export async function pushCircularesToCloud(circulares: Record<string, CircularConfig>): Promise<boolean> {
+  if (typeof window === 'undefined') return false
+  try {
+    const res = await fetch('/api/circulares', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ circulares })
+    })
+    return res.ok
+  } catch (e) {
+    console.warn('[CircularService] pushCircularesToCloud error:', e)
+    return false
+  }
+}
+
+/**
+ * Descarga y sincroniza las circulares de financiación desde la nube (Supabase)
+ * Mezcla con las locales manteniendo siempre la versión más reciente
+ */
+export async function syncCircularesFromCloud(force = false): Promise<Record<string, CircularConfig>> {
+  if (typeof window === 'undefined') return {}
+  const now = Date.now()
+  if (!force && isSyncing) return getAllCirculares()
+  if (!force && now - lastSyncTime < 5000) return getAllCirculares()
+
+  isSyncing = true
+  lastSyncTime = now
+
+  try {
+    const res = await fetch('/api/circulares', {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' }
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    const data = await res.json()
+    if (data.success && data.circulares && typeof data.circulares === 'object') {
+      const cloudCirculares = data.circulares as Record<string, CircularConfig>
+      const localCirculares = getAllCirculares()
+      let hasChanges = false
+      let hasLocalNewer = false
+
+      const merged: Record<string, CircularConfig> = { ...localCirculares }
+
+      for (const [key, cloudConf] of Object.entries(cloudCirculares)) {
+        const localConf = localCirculares[key]
+        if (!localConf) {
+          merged[key] = cloudConf
+          hasChanges = true
+        } else {
+          const cloudTime = new Date(cloudConf.updatedAt || 0).getTime()
+          const localTime = new Date(localConf.updatedAt || 0).getTime()
+          if (cloudTime > localTime) {
+            merged[key] = cloudConf
+            hasChanges = true
+          } else if (localTime > cloudTime) {
+            hasLocalNewer = true
+          }
+        }
+      }
+
+      // Si hay circulares locales que aún no estaban en la nube, propagarlas
+      for (const [key] of Object.entries(localCirculares)) {
+        if (!cloudCirculares[key]) {
+          hasLocalNewer = true
+          break
+        }
+      }
+
+      if (hasChanges || Object.keys(localCirculares).length === 0) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+        window.dispatchEvent(new CustomEvent('circular-storage-updated', { detail: { fromCloud: true } }))
+      }
+
+      if (hasLocalNewer) {
+        pushCircularesToCloud(merged).catch(() => {})
+      }
+
+      return merged
+    }
+  } catch (err) {
+    console.warn('[CircularService] Error sincronizando con Supabase:', err)
+  } finally {
+    isSyncing = false
+  }
+
+  return getAllCirculares()
+}
+
+// Inicialización de sincronización reactiva en navegador
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    syncCircularesFromCloud().catch(() => {})
+  }, 200)
+
+  window.addEventListener('focus', () => {
+    syncCircularesFromCloud().catch(() => {})
+  })
 }
 
 /**

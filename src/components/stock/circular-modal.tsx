@@ -15,6 +15,7 @@ import {
   getAllCirculares,
   getModelsForBrand,
   getVersionsForBrandAndModels,
+  syncCircularesFromCloud,
 } from '@/lib/services/circular-service'
 import { formatNumberDots, parseNumberFromDots } from '@/lib/utils'
 import {
@@ -29,6 +30,7 @@ import {
   Sparkles,
   Car,
   AlertCircle,
+  Cloud,
 } from 'lucide-react'
 
 interface CircularModalProps {
@@ -62,15 +64,33 @@ export function CircularModal({
   const [rows, setRows] = useState<CircularRow[]>(EMPTY_CIRCULAR_ROWS)
   const [, setSelectedRowIdx] = useState<number>(0)
   const [savedStatus, setSavedStatus] = useState<boolean>(false)
+  const [syncVersion, setSyncVersion] = useState<number>(0)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
+  // Sincronizar desde Supabase al abrir el modal y escuchar cambios de storage
+  useEffect(() => {
+    if (isOpen) {
+      syncCircularesFromCloud().catch(() => {})
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    const handleStorageUpdate = () => {
+      setSyncVersion(v => v + 1)
+    }
+    window.addEventListener('circular-storage-updated', handleStorageUpdate)
+    return () => {
+      window.removeEventListener('circular-storage-updated', handleStorageUpdate)
+    }
+  }, [])
+
   // Obtener circulares existentes guardadas
   const knownCirculares = useMemo(() => {
     return Object.values(getAllCirculares())
-  }, [isOpen, savedStatus])
+  }, [isOpen, savedStatus, syncVersion])
 
   // Catálogo completo de modelos para la marca en cuestión
   const availableModels = useMemo(() => {
@@ -126,7 +146,7 @@ export function CircularModal({
     [vehicle?.Marca]
   )
 
-  // Inicializar o cargar la circular al abrir el modal para el vehículo
+  // Inicializar o cargar la circular al abrir el modal para el vehículo o cuando se sincroniza con la nube
   useEffect(() => {
     if (!isOpen || !vehicle) return
 
@@ -179,7 +199,7 @@ export function CircularModal({
       setSelectedVersions(vehVer ? [vehVer] : [])
       setSelectedRowIdx(0)
     }
-  }, [isOpen, vehicle])
+  }, [isOpen, vehicle, syncVersion])
 
   // Cargar circular existente al cambiar la selección de modelos o versiones
   const updateRowsForSelection = useCallback(
@@ -863,8 +883,14 @@ export function CircularModal({
           </div>
         </div>
 
-        {/* Pie de la ventana: solo botón Guardar */}
-        <div className="px-5 py-3.5 border-t border-[#1F2337] bg-[#131620] flex items-center justify-end">
+        {/* Pie de la ventana: indicador de nube y botón Guardar */}
+        <div className="px-5 py-3.5 border-t border-[#1F2337] bg-[#131620] flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[11px] text-[#8B8FA8]">
+            <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Sincronización en la nube activa</span>
+            <span className="sm:hidden">En la nube</span>
+          </div>
+
           <button
             type="button"
             onClick={handleSaveAndAutoApply}
