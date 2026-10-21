@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save, Loader2, Image as ImageIcon, Sparkles, Check, Upload, Trash2, Star } from 'lucide-react'
 import Link from 'next/link'
 import { formatPrice, formatNumberDots, parseNumberFromDots, getAllVehiclePhotos } from '@/lib/utils'
+import { useUserRole } from '@/lib/hooks/use-user-role'
 
 async function compressImage(file: File): Promise<File> {
   if (typeof window === 'undefined' || !file.type.startsWith('image/') || file.type.includes('svg') || file.type.includes('gif')) {
@@ -67,6 +68,7 @@ interface Props {
 }
 
 export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
+  const { isAdmin } = useUserRole()
   const [formData, setFormData] = useState<Partial<Vehicle>>({
     Patente: initialData.Patente ?? '',
     Marca: initialData.Marca ?? '',
@@ -448,17 +450,19 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: '#8B8FA8' }}>Precio de Compra / Costo ($ ARS)</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              className="input"
-              placeholder="15.000.000"
-              value={formatNumberDots(formData.Precio_Compra)}
-              onChange={e => handleChange('Precio_Compra', parseNumberFromDots(e.target.value) || 0)}
-            />
-          </div>
+          {isAdmin && (
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: '#8B8FA8' }}>Precio de Compra / Costo ($ ARS)</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                className="input"
+                placeholder="15.000.000"
+                value={formatNumberDots(formData.Precio_Compra)}
+                onChange={e => handleChange('Precio_Compra', parseNumberFromDots(e.target.value) || 0)}
+              />
+            </div>
+          )}
 
           <div className="mt-2">
             <div>

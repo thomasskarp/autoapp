@@ -6,9 +6,10 @@ import { Vehicle } from '@/lib/supabase/types'
 import { formatPrice, vehicleName } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { useUserRole } from '@/lib/hooks/use-user-role'
 import {
   X, Wrench, Plus, Trash2, CheckCircle2, ShoppingBag, DollarSign,
-  Sparkles, TrendingUp, ShieldCheck, Zap, Loader2, ArrowRight
+  Sparkles, TrendingUp, ShieldCheck, Zap, Loader2, ArrowRight, Lock, Cloud
 } from 'lucide-react'
 
 interface Props {
@@ -24,6 +25,7 @@ interface GastoItem {
 
 export function VehicleManagementModal({ vehicle, onClose }: Props) {
   const [mounted, setMounted] = useState(false)
+  const { isAdmin, isVendedor } = useUserRole()
   const [activeTab, setActiveTab] = useState<'GASTOS' | 'VENTA' | 'TASACION_IA'>('GASTOS')
   
   // Smart Appraisal IA State
@@ -65,7 +67,14 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
     setMounted(true)
   }, [])
 
-  // Sync vehicle initial data
+  // Si el usuario es vendedor, abrir directamente en VENTA para proteger gastos internos
+  useEffect(() => {
+    if (isVendedor) {
+      setActiveTab('VENTA')
+    }
+  }, [isVendedor])
+
+  // Sync vehicle initial data & fetch gastos and venta from Supabase
   useEffect(() => {
     if (vehicle) {
       setPrecioCompra(vehicle.Precio_Compra || 0)
@@ -73,7 +82,7 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
       setAppraisalQuery(`${vehicle.Marca || ''} ${vehicle.Modelo || ''} ${vehicle.Version || ''} ${vehicle.Año || ''}`.trim())
       setAppraisalPriceRef(vehicle.Precio_Venta || 0)
       
-      // Load saved expenses from localStorage
+      // 1. Cargar caché local inmediato de gastos
       try {
         const savedGastos = localStorage.getItem(`gastos_auto_${vehicle.ID}`)
         if (savedGastos) {
@@ -84,6 +93,31 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
       } catch (e) {
         setGastos([])
       }
+
+      // 2. Cargar gastos desde Supabase en la nube
+      fetch(`/api/stock/gastos?vehicleId=${vehicle.ID}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && !data.restricted && Array.isArray(data.gastos)) {
+            setGastos(data.gastos)
+            try {
+              localStorage.setItem(`gastos_auto_${vehicle.ID}`, JSON.stringify(data.gastos))
+            } catch {}
+          } else if (data.restricted) {
+            setGastos([])
+          }
+        })
+        .catch(() => {})
+
+      // 3. Cargar reporte de venta desde Supabase en la nube
+      fetch(`/api/stock/ventas?vehicleId=${vehicle.ID}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.reporte) {
+            setReporteGenerado(data.reporte)
+          }
+        })
+        .catch(() => {})
     }
   }, [vehicle])
 
@@ -154,8 +188,12 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
   const isOkm = (vehicle.Tipo_Vehiculo || '').toLowerCase() === '0km'
 
   // Add Expense Item
-  const handleAddGasto = () => {
-    if (!nuevoConcepto.trim() || !nuevoMonto) return
+  const handleAddGasto = async () => {
+    if (!nuevoConcepto.trim() || !nuevoMonto || !vehicle) return
+    if (!isAdmin) {
+      alert('Solo los administradores pueden registrar gastos internos.')
+      return
+    }
     const item: GastoItem = {
       id: Date.now().toString(),
       concepto: nuevoConcepto.trim(),
@@ -163,35 +201,84 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
     }
     const updated = [...gastos, item]
     setGastos(updated)
-    localStorage.setItem(`gastos_auto_${vehicle.ID}`, JSON.stringify(updated))
+    try {
+      localStorage.setItem(`gastos_auto_${vehicle.ID}`, JSON.stringify(updated))
+    } catch {}
     setNuevoConcepto('')
     setNuevoMonto('')
+
+    // Sincronizar en Supabase
+    fetch('/api/stock/gastos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vehicleId: vehicle.ID,
+        gastos: updated,
+        precioCompra,
+        isOkm
+      })
+    }).catch(e => console.warn('Error sincronizando gastos:', e))
   }
 
   // Remove Expense Item
-  const handleRemoveGasto = (id: string) => {
+  const handleRemoveGasto = async (id: string) => {
+    if (!vehicle) return
+    if (!isAdmin) {
+      alert('Solo los administradores pueden eliminar gastos.')
+      return
+    }
     const updated = gastos.filter(g => g.id !== id)
     setGastos(updated)
-    localStorage.setItem(`gastos_auto_${vehicle.ID}`, JSON.stringify(updated))
+    try {
+      localStorage.setItem(`gastos_auto_${vehicle.ID}`, JSON.stringify(updated))
+    } catch {}
+
+    // Sincronizar en Supabase
+    fetch('/api/stock/gastos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vehicleId: vehicle.ID,
+        gastos: updated,
+        precioCompra,
+        isOkm
+      })
+    }).catch(e => console.warn('Error sincronizando gastos:', e))
   }
 
   // Save Internal Expenses Data
   const handleSaveInternal = async () => {
+    if (!vehicle) return
+    if (!isAdmin) {
+      alert('Solo los administradores pueden modificar los costos y gastos internos.')
+      return
+    }
     setSaving(true)
-    const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
     try {
-      await supabase.from(tableName).update({
-        Precio_Compra: precioCompra
-      }).eq('ID', vehicle.ID)
+      const res = await fetch('/api/stock/gastos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vehicleId: vehicle.ID,
+          gastos,
+          precioCompra,
+          isOkm
+        })
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error guardando gastos en la nube')
+      }
 
       localStorage.setItem(`gastos_auto_${vehicle.ID}`, JSON.stringify(gastos))
       try {
         await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
       } catch (e) {}
-      alert('¡Información de gastos e inversión guardada!')
+      alert('¡Información de gastos e inversión sincronizada en Supabase!')
       router.refresh()
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error guardando gastos:', err)
+      alert('Error guardando gastos: ' + err.message)
     } finally {
       setSaving(false)
     }
@@ -199,8 +286,8 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
 
   // Register Sale & Generate Single Vehicle Report
   const handleRegistrarVenta = async () => {
+    if (!vehicle) return
     setSaving(true)
-    const tableName = isOkm ? 'DB_STOCK_OKM' : 'DB_STOCK'
     
     const costoTotalConComision = inversionTotal + comision
     const gananciaNeta = precioVentaFinal - costoTotalConComision
@@ -211,13 +298,13 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
       patente: vehicle.Patente || 'SIN PATENTE',
       año: vehicle.Año,
       km: vehicle.Km,
-      precioCompra: precioCompra,
-      totalGastos: totalGastos,
-      listaGastos: gastos,
+      precioCompra: isAdmin ? precioCompra : undefined,
+      totalGastos: isAdmin ? totalGastos : undefined,
+      listaGastos: isAdmin ? gastos : [],
       comisionVendedor: comision,
-      inversionTotal: inversionTotal,
+      inversionTotal: isAdmin ? inversionTotal : undefined,
       precioVentaFinal: precioVentaFinal,
-      gananciaNeta: gananciaNeta,
+      gananciaNeta: isAdmin ? gananciaNeta : undefined,
       metodoVenta: metodoVenta,
       vendedor: vendedor,
       permuta: metodoVenta.includes('Permuta') ? {
@@ -231,32 +318,31 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
     }
 
     try {
-      // 1. Update vehicle status to VENDIDO and set final sale price
-      await supabase.from(tableName).update({
-        Estado: 'VENDIDO',
-        Precio_Venta: precioVentaFinal,
-        Precio_Compra: precioCompra
-      }).eq('ID', vehicle.ID)
-
-      // 2. Register sale interaction in DB_INTERACCIONES for Dashboard Ventas metrics
-      await supabase.from('DB_INTERACCIONES').insert({
-        Tipo_Interaccion: 'VENTA_REGISTRADA',
-        Vendedor: vendedor,
-        Detalle_Conversacion: `Venta de ${vehicleName(vehicle)} por $${new Intl.NumberFormat('es-AR').format(precioVentaFinal)} (Ganancia Neta: $${new Intl.NumberFormat('es-AR').format(gananciaNeta)}). Método: ${metodoVenta}`
+      const res = await fetch('/api/stock/ventas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vehicleId: vehicle.ID,
+          reporte,
+          isOkm
+        })
       })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error registrando venta en la nube')
+      }
 
-      // 3. Invalidate vehicle cache
+      // Invalidate vehicle cache
       try {
         await fetch('/api/vehicles/cache/invalidate', { method: 'POST' })
       } catch (e) {}
 
-      // 4. Save report locally
       localStorage.setItem(`reporte_venta_${vehicle.ID}`, JSON.stringify(reporte))
       setReporteGenerado(reporte)
       router.refresh()
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error registrando venta:', err)
-      alert('Error registrando la venta. Intente nuevamente.')
+      alert('Error registrando la venta: ' + (err.message || 'Intente nuevamente.'))
     } finally {
       setSaving(false)
     }
@@ -320,8 +406,26 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
           {/* VISTA 1: GASTOS */}
           {activeTab === 'GASTOS' && (
             <div className="flex flex-col gap-5">
-              
-              {/* 1. Registro de Gastos */}
+              {!isAdmin ? (
+                <div className="card p-8 flex flex-col items-center justify-center text-center gap-3.5 bg-[#13161F] border border-[#252A3D] rounded-2xl shadow-xl">
+                  <div className="w-14 h-14 rounded-2xl bg-[#FACC1515] border border-[#FACC1530] flex items-center justify-center text-[#FACC15]">
+                    <Lock size={26} />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-extrabold text-white">Acceso Restringido para Vendedores</h4>
+                    <p className="text-xs text-[#8B8FA8] max-w-sm mt-1 leading-relaxed">
+                      El detalle de gastos internos, costos de taller y precio de adquisición del auto están reservados exclusivamente para el <strong>Administrador</strong>.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('VENTA')}
+                    className="btn-primary text-xs px-5 py-2.5 rounded-xl font-bold mt-2 flex items-center gap-2 cursor-pointer">
+                    <ShoppingBag size={14} /> Ir a Registro de Venta
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* 1. Registro de Gastos */}
               <div className="card p-4 flex flex-col gap-3" style={{ background: '#13161F', border: '1px solid #1F2337' }}>
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: '#E8EAED' }}>
@@ -421,13 +525,15 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
                 <button
                   onClick={handleSaveInternal}
                   disabled={saving}
-                  className="btn-primary text-xs py-2.5 px-4">
-                  {saving ? 'Guardando...' : 'Guardar Gastos'}
+                  className="btn-primary text-xs py-2.5 px-4 cursor-pointer">
+                  {saving ? 'Guardando en Supabase...' : 'Guardar Gastos en Nube'}
                 </button>
               </div>
-
-            </div>
+            </>
           )}
+
+        </div>
+      )}
 
           {/* VISTA 2: VENTA */}
           {activeTab === 'VENTA' && (
@@ -467,10 +573,19 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
                         <span className="font-bold text-sm text-[#F59E0B]">{formatPrice(reporteGenerado.comisionVendedor)}</span>
                       </div>
 
-                      <div>
-                        <span className="block text-[10px]" style={{ color: '#555870' }}>GANANCIA NETA</span>
-                        <span className="font-extrabold text-sm text-[#FACC15]">{formatPrice(reporteGenerado.gananciaNeta)}</span>
-                      </div>
+                      {isAdmin && reporteGenerado.gananciaNeta != null ? (
+                        <div>
+                          <span className="block text-[10px]" style={{ color: '#555870' }}>GANANCIA NETA</span>
+                          <span className="font-extrabold text-sm text-[#FACC15]">{formatPrice(reporteGenerado.gananciaNeta)}</span>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="block text-[10px]" style={{ color: '#555870' }}>GANANCIA NETA</span>
+                          <span className="font-semibold text-xs text-[#8B8FA8] flex items-center gap-1 mt-1">
+                            <Lock size={11} className="text-[#FACC15]" /> Confidencial
+                          </span>
+                        </div>
+                      )}
 
                       <div>
                         <span className="block text-[10px]" style={{ color: '#555870' }}>MÉTODO</span>
@@ -612,21 +727,28 @@ export function VehicleManagementModal({ vehicle, onClose }: Props) {
                   {/* Ganancia Neta Estimada & Botón Registrar */}
                   <div className="p-4 rounded-xl flex items-center justify-between"
                     style={{ background: 'linear-gradient(135deg, #FACC1515, #FACC1515)', border: '1px solid #FACC1540' }}>
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#555870' }}>
-                        GANANCIA NETA ESTIMADA DEL AUTO
-                      </span>
-                      <p className="text-2xl font-extrabold" style={{ color: gananciaEstimada >= 0 ? '#FACC15' : '#EF4444' }}>
-                        {formatPrice(gananciaEstimada)}
-                      </p>
-                    </div>
+                    {isAdmin ? (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#555870' }}>
+                          GANANCIA NETA ESTIMADA DEL AUTO
+                        </span>
+                        <p className="text-2xl font-extrabold" style={{ color: gananciaEstimada >= 0 ? '#FACC15' : '#EF4444' }}>
+                          {formatPrice(gananciaEstimada)}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-[#8B8FA8]">
+                        <Lock size={15} className="text-[#FACC15]" />
+                        <span>Márgenes y costos reservados para Administración</span>
+                      </div>
+                    )}
 
                     <button
                       onClick={handleRegistrarVenta}
                       disabled={saving}
-                      className="btn-primary text-xs py-3 px-5 font-bold flex items-center gap-2">
+                      className="btn-primary text-xs py-3 px-5 font-bold flex items-center gap-2 cursor-pointer">
                       <ShoppingBag size={16} />
-                      {saving ? 'Registrando...' : 'Registrar Venta & Generar Reporte'}
+                      {saving ? 'Registrando en Supabase...' : 'Registrar Venta & Generar Reporte'}
                     </button>
                   </div>
 
