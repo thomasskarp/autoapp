@@ -1938,11 +1938,14 @@ async function runFacebookVehicleAutomation(car) {
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 12: KILOMETRAJE
   // ─────────────────────────────────────────────────────────────────────────
-  const cleanKms = String(car.kms ? car.kms.replace(/\D/g, '') : '').trim()
-  if (cleanKms) {
-    fillFacebookTextInput(['kilometraje', 'mileage', 'odómetro', 'kilómetros', 'km'], cleanKms)
-    await new Promise(r => setTimeout(r, 150))
+  let cleanKms = String(car.kms ? car.kms.replace(/\D/g, '') : '').trim()
+  // En Facebook Marketplace no permite 0 en el campo numérico (exige valor entre 300 y 1.000.000).
+  // Si el auto es 0km o no tiene kms cargados, colocar 1111 en el input (en la descripción se mantiene 0 km).
+  if (!cleanKms || cleanKms === '0' || Number(cleanKms) === 0) {
+    cleanKms = '1111'
   }
+  fillFacebookTextInput(['kilometraje', 'mileage', 'odómetro', 'kilómetros', 'km'], cleanKms)
+  await new Promise(r => setTimeout(r, 150))
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 13: ÚLTIMO LA DESCRIPCIÓN (después de completar todos los campos)
