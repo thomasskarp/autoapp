@@ -569,7 +569,7 @@ export default function ConfiguracionPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-black text-white">Extensión Auto-Cyborg 360</h3>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#10B98115] text-[#10B981] border border-[#10B98130]">v1.2.0</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#10B98115] text-[#10B981] border border-[#10B98130]">v1.2.3</span>
                 </div>
                 <p className="text-xs text-[#8B8FA8] mt-0.5">
                   Publicación automática en Facebook Marketplace y WhatsApp Estados.
