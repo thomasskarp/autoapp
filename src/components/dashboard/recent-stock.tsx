@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { formatPrice, formatKm, vehicleName, statusConfig } from '@/lib/utils'
+import { formatPrice, formatKm, vehicleName, statusConfig, formatImageUrl } from '@/lib/utils'
 import { Vehicle } from '@/lib/supabase/types'
 import { ArrowRight, Car } from 'lucide-react'
 
@@ -53,7 +53,7 @@ export function RecentStock({ vehicles }: { vehicles: Vehicle[] }) {
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0 bg-[#1A1D28]">
                         {v.FOTO_PORTADA ? (
-                          <img src={v.FOTO_PORTADA} alt={vehicleName(v)} className="w-full h-full object-cover" />
+                          <img src={formatImageUrl(v.FOTO_PORTADA) || v.FOTO_PORTADA} alt={vehicleName(v)} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                         ) : (
                           <Car size={16} className="text-[#555870]" />
                         )}

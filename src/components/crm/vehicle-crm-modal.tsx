@@ -87,6 +87,7 @@ export function VehicleCrmModal({ vehicle, onClose }: VehicleCrmModalProps) {
                 <img
                   src={coverImg}
                   alt=""
+                  referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"
                 />
               ) : (

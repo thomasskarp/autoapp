@@ -98,27 +98,28 @@ export function formatBodyType(type?: string | null): string {
   return clean
 }
 
-// Helper to format any image URL safely (preserving direct HTTP/HTTPS URLs and converting Drive view links)
+// Helper to format any image URL safely (converting Google Drive links to direct LH3 links)
 export function formatImageUrl(rawUrl?: string | null): string | null {
   if (!rawUrl || typeof rawUrl !== 'string') return null
   const clean = rawUrl.trim()
   if (!clean) return null
 
-  // 1. Direct HTTP/HTTPS URLs (including drive.google.com/thumbnail?id=... and lh3.googleusercontent.com)
-  if (clean.startsWith('http://') || clean.startsWith('https://')) {
-    // Convert view/open links to direct LH3 links
-    if (clean.includes('drive.google.com/file/d/') || clean.includes('drive.google.com/open?id=')) {
-      const match = clean.match(/\/d\/([a-zA-Z0-9_-]{25,50})/) || clean.match(/[?&]id=([a-zA-Z0-9_-]{25,50})/)
-      if (match && match[1]) {
-        return `https://lh3.googleusercontent.com/d/${match[1]}=s600`
-      }
+  // 1. Google Drive URLs of any format (thumbnail?id=..., file/d/..., open?id=..., uc?id=...)
+  if (clean.includes('drive.google.com')) {
+    const match = clean.match(/\/d\/([a-zA-Z0-9_-]{25,50})/) || clean.match(/[?&]id=([a-zA-Z0-9_-]{25,50})/)
+    if (match && match[1]) {
+      return `https://lh3.googleusercontent.com/d/${match[1]}=s1000`
     }
-    return clean
   }
 
   // 2. Pure Google Drive File ID string (25-50 chars)
   if (/^[a-zA-Z0-9_-]{25,50}$/.test(clean)) {
-    return `https://lh3.googleusercontent.com/d/${clean}=s600`
+    return `https://lh3.googleusercontent.com/d/${clean}=s1000`
+  }
+
+  // 3. Direct HTTP/HTTPS URLs (including lh3.googleusercontent.com, supabase.co, etc.)
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    return clean
   }
 
   return null
