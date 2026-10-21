@@ -6,8 +6,9 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Users, UserPlus, Key, Mail, Trash2, Eye, EyeOff,
   CheckCircle2, AlertCircle, Loader2, Sparkles, Copy, Check, RefreshCw,
-  Puzzle, ExternalLink, Download, LogOut
+  Puzzle, ExternalLink, Download, LogOut, ShieldCheck, Link2
 } from 'lucide-react'
+import { CRMConnectionsModal } from '@/components/crm/crm-connections-modal'
 
 interface Vendedor {
   id: string
@@ -22,6 +23,7 @@ export default function ConfiguracionPage() {
   const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'vendedor' | null>(null)
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('')
   const [checkingRole, setCheckingRole] = useState(true)
+  const [showConnectionsModal, setShowConnectionsModal] = useState(false)
 
   const [vendedores, setVendedores] = useState<Vendedor[]>([])
   const [loadingList, setLoadingList] = useState(true)
@@ -559,6 +561,34 @@ export default function ConfiguracionPage() {
           </>
         )}
 
+                {/* Integraciones & Cuentas Conectadas */}
+        <div className="card p-5 border border-[#1F2337] bg-[#13161F] flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#FACC1515] border border-[#FACC1530] flex items-center justify-center text-[#FACC15] shrink-0">
+                <ShieldCheck size={22} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-white">Cuentas y Conexiones</h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#3B82F615] text-[#3B82F6] border border-[#3B82F630]">API & CRM</span>
+                </div>
+                <p className="text-xs text-[#8B8FA8] mt-0.5">
+                  Conectá tus cuentas de Meta (Facebook/Instagram), MercadoLibre y WhatsApp Cloud para responder y sincronizar.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowConnectionsModal(true)}
+              className="btn-primary px-5 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+              <Link2 size={15} />
+              <span>Gestionar Conexiones</span>
+            </button>
+          </div>
+        </div>
+
         {/* Extensión Auto-Cyborg 360 & Sesión Activa */}
         <div className="card p-5 border border-[#1F2337] bg-[#13161F] flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -672,6 +702,8 @@ export default function ConfiguracionPage() {
           </div>
         </div>
       )}
+      {/* Modal Cuentas y Conexiones */}
+      <CRMConnectionsModal isOpen={showConnectionsModal} onClose={() => setShowConnectionsModal(false)} />
     </div>
   )
 }

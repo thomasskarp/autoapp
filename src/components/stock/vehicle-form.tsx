@@ -239,9 +239,10 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
 
         if (err) throw err
       } else {
+        const newId = crypto.randomUUID()
         const newVehicle = {
           ...formData,
-          ID: crypto.randomUUID(),
+          ID: newId,
           Patente: cleanPatente,
           createdAt: new Date().toISOString(),
         }
@@ -252,6 +253,15 @@ export function VehicleForm({ initialData = {}, isEditing = false }: Props) {
           .insert(newVehicle)
 
         if (err) throw err
+
+        // Asociar este vehículo a la agencia del usuario creador
+        try {
+          await fetch('/api/vehicles/register-agency', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vehicleId: newId })
+          })
+        } catch (e) {}
       }
 
       try {

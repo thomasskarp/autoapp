@@ -4,15 +4,11 @@ export async function POST(req: Request) {
   try {
     try {
       const { createClient } = await import('@/lib/supabase/server')
-      const { getUserAgencyId } = await import('@/lib/services/integrations')
+      const { getUserAgencyId, deleteAgencyIntegration } = await import('@/lib/services/integrations')
       const supabase = await createClient()
       const agencyId = await getUserAgencyId(supabase)
 
-      await supabase
-        .from('agency_integrations')
-        .delete()
-        .eq('agency_id', agencyId)
-        .in('provider', ['facebook_page', 'facebook'])
+      await deleteAgencyIntegration(supabase, agencyId, 'facebook_page')
     } catch (e) {
       console.warn('[Facebook Disconnect] Error limpiando BD:', e)
     }

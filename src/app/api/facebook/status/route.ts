@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server'
-import { DEFAULT_AGENCY_ID } from '@/lib/services/integrations'
-
 
 export async function GET(req: Request) {
   try {
@@ -11,26 +9,18 @@ export async function GET(req: Request) {
 
     try {
       const { createClient } = await import('@/lib/supabase/server')
-      const { getUserAgencyId, getValidFacebookPageToken, DEFAULT_AGENCY_ID } = await import('@/lib/services/integrations')
+      const { getUserAgencyId, getValidFacebookPageToken } = await import('@/lib/services/integrations')
       const supabase = await createClient()
       agencyId = await getUserAgencyId(supabase)
       const tokenRes = await getValidFacebookPageToken(supabase, agencyId)
       pageId = tokenRes.pageId
       pageToken = tokenRes.pageToken
       pageName = tokenRes.pageName
-
     } catch (e) {
       pageId = null
       pageToken = null
       pageName = null
     }
-
-    if (!pageToken && (!agencyId || agencyId === DEFAULT_AGENCY_ID)) {
-      pageId = process.env.FACEBOOK_PAGE_ID || null
-      pageToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN || null
-      pageName = process.env.FACEBOOK_PAGE_NAME || null
-    }
-
 
     if (!pageId || !pageToken) {
       return NextResponse.json({
@@ -65,7 +55,6 @@ export async function GET(req: Request) {
         fanCount: graphData.fan_count || 0
       })
     } catch (metaErr: any) {
-      // Si falla la red con Meta, informar token presente en BD
       return NextResponse.json({
         connected: true,
         pageId,

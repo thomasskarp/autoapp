@@ -1,5 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js'
-import { getUserAgencyId, getAgencyIntegration, saveAgencyIntegration, DEFAULT_AGENCY_ID } from '@/lib/services/integrations'
+import {
+  getUserAgencyId,
+  getAgencyIntegration,
+  saveAgencyIntegration,
+  deleteAgencyIntegration
+} from '@/lib/services/integrations'
 
 export interface MetaConnectionConfig {
   connected: boolean
@@ -45,7 +50,8 @@ export interface CRMConnectionsOverview {
 }
 
 /**
- * Obtiene el estado consolidado de todas las conexiones CRM
+ * Obtiene el estado consolidado de todas las conexiones CRM para la agencia del usuario autenticado.
+ * Cada usuario/agencia inicia 100% limpia sin cuentas pre-conectadas.
  */
 export async function getCRMConnectionsOverview(supabase: SupabaseClient): Promise<CRMConnectionsOverview> {
   const agencyId = await getUserAgencyId(supabase)
@@ -56,31 +62,31 @@ export async function getCRMConnectionsOverview(supabase: SupabaseClient): Promi
   const metaGeneral = await getAgencyIntegration(supabase, agencyId, 'meta')
 
   const metaData = metaFb || metaGeneral || metaIg
-  const isMetaConnected = Boolean(metaData?.access_token)
+  const isMetaConnected = Boolean(metaData?.access_token && (metaFb?.metadata?.page_id || metaData?.user_id))
 
   const meta: MetaConnectionConfig = {
     connected: isMetaConnected,
-    pageId: metaFb?.metadata?.page_id || metaData?.user_id || process.env.FACEBOOK_PAGE_ID || null,
-    pageName: metaFb?.nickname || metaData?.nickname || process.env.FACEBOOK_PAGE_NAME || null,
-    pageToken: metaData?.access_token ? '••••••••' + metaData.access_token.slice(-6) : (process.env.FACEBOOK_PAGE_ACCESS_TOKEN ? '••••••••' + process.env.FACEBOOK_PAGE_ACCESS_TOKEN.slice(-6) : null),
-    igUserId: metaIg?.user_id || metaData?.metadata?.instagram_business_account?.id || process.env.INSTAGRAM_ACCOUNT_ID || null,
-    igUsername: metaIg?.nickname || metaData?.metadata?.instagram_business_account?.username || process.env.INSTAGRAM_USERNAME || null,
-    verifyToken: metaData?.metadata?.verify_token || process.env.META_WEBHOOK_VERIFY_TOKEN || 'autoapp_meta_webhook_secret',
-    appId: metaData?.metadata?.app_id || process.env.FACEBOOK_APP_ID || null,
+    pageId: isMetaConnected ? (metaFb?.metadata?.page_id || metaData?.user_id || null) : '',
+    pageName: isMetaConnected ? (metaFb?.nickname || metaData?.nickname || 'Fan Page Oficial') : '',
+    pageToken: isMetaConnected && metaData?.access_token ? '••••••••' + metaData.access_token.slice(-6) : '',
+    igUserId: isMetaConnected ? (metaIg?.user_id || metaData?.metadata?.instagram_business_account?.id || null) : '',
+    igUsername: isMetaConnected ? (metaIg?.nickname || metaData?.metadata?.instagram_business_account?.username || null) : '',
+    verifyToken: metaData?.metadata?.verify_token || 'autoapp_meta_webhook_secret',
+    appId: isMetaConnected ? (metaData?.metadata?.app_id || null) : '',
     updatedAt: metaData?.updated_at || null
   }
 
   // 2. MercadoLibre
   const meliData = await getAgencyIntegration(supabase, agencyId, 'mercadolibre')
-  const isMeliConnected = Boolean(meliData?.access_token || process.env.MERCADOLIBRE_ACCESS_TOKEN)
+  const isMeliConnected = Boolean(meliData?.access_token && meliData.access_token !== 'PENDING_OAUTH')
 
   const meli: MeliConnectionConfig = {
     connected: isMeliConnected,
-    clientId: meliData?.metadata?.client_id || process.env.MERCADOLIBRE_CLIENT_ID || null,
-    clientSecret: meliData?.metadata?.client_secret ? '••••••••' : (process.env.MERCADOLIBRE_CLIENT_SECRET ? '••••••••' : null),
-    accessToken: meliData?.access_token ? '••••••••' + meliData.access_token.slice(-6) : (process.env.MERCADOLIBRE_ACCESS_TOKEN ? '••••••••' + process.env.MERCADOLIBRE_ACCESS_TOKEN.slice(-6) : null),
-    nickname: meliData?.nickname || 'Concesionaria Oficial',
-    sellerId: meliData?.user_id || null,
+    clientId: isMeliConnected ? (meliData?.metadata?.client_id || null) : '',
+    clientSecret: isMeliConnected && meliData?.metadata?.client_secret ? '••••••••' : '',
+    accessToken: isMeliConnected && meliData?.access_token ? '••••••••' + meliData.access_token.slice(-6) : '',
+    nickname: isMeliConnected ? (meliData?.nickname || 'Cuenta MercadoLibre') : '',
+    sellerId: isMeliConnected ? (meliData?.user_id || null) : '',
     expiresAt: meliData?.expires_at || null,
     updatedAt: meliData?.updated_at || null
   }
@@ -95,11 +101,11 @@ export async function getCRMConnectionsOverview(supabase: SupabaseClient): Promi
   const whatsapp: WhatsAppConnectionConfig = {
     connected: isWaCloudConnected || isWaWebConnected,
     mode: waCloud?.metadata?.preferred_mode || (isWaWebConnected ? 'web_session' : 'cloud_api'),
-    phoneNumberId: waCloud?.metadata?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID || null,
-    wabaId: waCloud?.metadata?.waba_id || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || null,
-    accessToken: waCloud?.access_token ? '••••••••' + waCloud.access_token.slice(-6) : (process.env.WHATSAPP_CLOUD_ACCESS_TOKEN ? '••••••••' + process.env.WHATSAPP_CLOUD_ACCESS_TOKEN.slice(-6) : null),
-    phoneNumber: waCloud?.nickname || waCloud?.metadata?.phone_number || process.env.WHATSAPP_PHONE_NUMBER || null,
-    verifyToken: waCloud?.metadata?.verify_token || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || 'autoapp_whatsapp_webhook_secret',
+    phoneNumberId: isWaCloudConnected ? (waCloud?.metadata?.phone_number_id || null) : '',
+    wabaId: isWaCloudConnected ? (waCloud?.metadata?.waba_id || null) : '',
+    accessToken: isWaCloudConnected && waCloud?.access_token ? '••••••••' + waCloud.access_token.slice(-6) : '',
+    phoneNumber: isWaCloudConnected ? (waCloud?.nickname || waCloud?.metadata?.phone_number || null) : '',
+    verifyToken: waCloud?.metadata?.verify_token || 'autoapp_whatsapp_webhook_secret',
     webConnected: isWaWebConnected,
     webPhoneNumber: waWeb?.nickname || null,
     updatedAt: waCloud?.updated_at || waWeb?.updated_at || null
@@ -203,21 +209,12 @@ export async function saveWhatsAppCloudConnection(
 }
 
 /**
- * Desconecta un proveedor
+ * Desconecta un proveedor para la agencia del usuario
  */
 export async function disconnectProvider(
   supabase: SupabaseClient,
   provider: string
 ) {
   const agencyId = await getUserAgencyId(supabase)
-  try {
-    await supabase
-      .from('agency_integrations')
-      .delete()
-      .eq('agency_id', agencyId)
-      .eq('provider', provider)
-    return { success: true }
-  } catch (err: any) {
-    return { success: false, error: err.message }
-  }
+  return await deleteAgencyIntegration(supabase, agencyId, provider)
 }

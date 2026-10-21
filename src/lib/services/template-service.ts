@@ -11,6 +11,63 @@ export interface CopyTemplate {
 
 export const STORAGE_KEY_TEMPLATES = 'autoapp_publication_templates'
 
+export const GENERIC_TEMPLATES: CopyTemplate[] = [
+  {
+    id: 'default-comercial',
+    name: '🏷️ Comercial Estándar',
+    isDefault: true,
+    vehicleType: 'all',
+    content: `🚗 *{MARCA} {MODELO} {VERSION}* ({AÑO})
+Km: {KM}
+💰 Precio de Venta: {PRECIO}
+💵 Entrega Mínima: {ENTREGA}
+
+⛽ Combustible: {COMBUSTIBLE} | Caja: {TRANSMISION}
+📝 {DESCRIPCION}`
+  },
+  {
+    id: 'default-marketplace',
+    name: '🔥 Marketplace / Oferta Directa',
+    isDefault: true,
+    vehicleType: 'all',
+    content: `🔥 IMPERDIBLE: {MARCA} {MODELO} {VERSION} ({AÑO}) — ¡Entrega Inmediata!
+📍 Kilometraje: {KM}
+💰 Precio de Contado: {PRECIO}
+💵 Anticipo / Cuotas: {ENTREGA}
+
+📋 Documentación 100% al día | Tomamos usados en parte de pago
+⛽ {COMBUSTIBLE} — {TRANSMISION}`
+  },
+  {
+    id: 'default-financiacion',
+    name: '⚡ Financiación Disponible',
+    isDefault: true,
+    vehicleType: 'all',
+    content: `⚡ {MARCA} {MODELO} {VERSION} ({AÑO}) ⚡
+📍 KM: {KM}
+💰 PRECIO: {PRECIO}
+💵 RETIRA CON {ENTREGA}
+
+🔥 Financiación disponible a sola firma
+📲 Consultanos por cuotas y planes a tu medida`
+  },
+  {
+    id: 'default-reel',
+    name: '🎬 Reel / Video',
+    isDefault: true,
+    vehicleType: 'all',
+    content: `🔥 {MARCA} {MODELO} {VERSION} ({AÑO}) 🔥
+📍 KM: {KM}
+💰 PRECIO: {PRECIO}
+💵 RETIRA CON {ENTREGA}
+
+⚡ ¡Subite hoy mismo con entrega inmediata!
+📲 Escribinos por WhatsApp o mensaje privado para coordinar tu visita.
+
+#autos #autosargentina #usadosseleccionados #concesionaria`
+  }
+]
+
 export const DEFAULT_TEMPLATES: CopyTemplate[] = [
   {
     id: 'default-comercial',

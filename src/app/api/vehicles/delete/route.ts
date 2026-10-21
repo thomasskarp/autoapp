@@ -38,6 +38,18 @@ export async function POST(req: NextRequest) {
     removeVehicleFromCache(strId)
     invalidateVehiclesCache()
 
+    // Desvincular de índice de agencia independiente si corresponde
+    try {
+      const { createClient } = await import('@/lib/supabase/server')
+      const { getAccountContext } = await import('@/lib/services/account-context')
+      const { unregisterVehicleFromAgency } = await import('@/lib/services/agency-vehicles')
+      const userSupabase = await createClient()
+      const context = await getAccountContext(userSupabase)
+      if (!context.isOkmAccount && context.agencyId) {
+        await unregisterVehicleFromAgency(supabase, context.agencyId, strId)
+      }
+    } catch (e) {}
+
     return NextResponse.json({ success: true, id: strId })
   } catch (err: any) {
     console.error('[API Delete Vehicle] Error inesperado:', err)

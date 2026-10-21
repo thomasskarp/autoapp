@@ -1,26 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
-import { CopyTemplate, DEFAULT_TEMPLATES } from '@/lib/services/template-service'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { CopyTemplate, DEFAULT_TEMPLATES, GENERIC_TEMPLATES } from '@/lib/services/template-service'
+import { getAccountContext } from '@/lib/services/account-context'
 
 export const dynamic = 'force-dynamic'
 
-const CONFIG_ID = 'CONFIG_PUBLICATION_TEMPLATES'
 const STORAGE_BUCKET = 'vehicle-images'
-const STORAGE_PATH = 'config/publication_templates.json'
 
 /**
  * GET /api/templates
- * Retorna todas las plantillas de publicación de la agencia sincronizadas en la nube (Supabase)
+ * Retorna las plantillas de publicación de la agencia asociada al usuario
  */
 export async function GET() {
   try {
-    const supabase = createAdminClient()
+    const userClient = await createClient()
+    const context = await getAccountContext(userClient)
+    const adminSupabase = createAdminClient()
+
+    const configId = context.isOkmAccount
+      ? 'CONFIG_PUBLICATION_TEMPLATES'
+      : `CONFIG_PUBLICATION_TEMPLATES_${context.agencyId}`
+
+    const storagePath = context.isOkmAccount
+      ? 'config/publication_templates.json'
+      : `config/templates_${context.agencyId}.json`
+
+    const defaultList = context.isOkmAccount ? DEFAULT_TEMPLATES : GENERIC_TEMPLATES
 
     // 1. Intentar leer desde la tabla de configuración APP_ENVIOS
-    const { data: dbData, error: dbErr } = await supabase
+    const { data: dbData } = await adminSupabase
       .from('APP_ENVIOS')
       .select('Observaciones')
-      .eq('ID', CONFIG_ID)
+      .eq('ID', configId)
       .maybeSingle()
 
     if (dbData?.Observaciones) {
@@ -39,9 +50,9 @@ export async function GET() {
 
     // 2. Respaldo: intentar leer desde Supabase Storage
     try {
-      const { data: fileData, error: storageErr } = await supabase.storage
+      const { data: fileData } = await adminSupabase.storage
         .from(STORAGE_BUCKET)
-        .download(STORAGE_PATH)
+        .download(storagePath)
 
       if (fileData) {
         const text = await fileData.text()
@@ -53,19 +64,17 @@ export async function GET() {
           )
         }
       }
-    } catch (e) {
-      // Ignorar si no existe el archivo aún
-    }
+    } catch (e) {}
 
-    // Si aún no hay guardadas en la nube, devolver plantillas oficiales predeterminadas
+    // 3. Fallback a plantillas base
     return NextResponse.json(
-      { success: true, templates: DEFAULT_TEMPLATES },
+      { success: true, templates: defaultList },
       { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } }
     )
   } catch (err: any) {
     console.error('[API Templates] GET Error:', err)
     return NextResponse.json(
-      { success: false, error: err.message, templates: DEFAULT_TEMPLATES },
+      { success: false, error: err.message, templates: GENERIC_TEMPLATES },
       { status: 500 }
     )
   }
@@ -73,7 +82,7 @@ export async function GET() {
 
 /**
  * POST /api/templates
- * Guarda o actualiza las plantillas en Supabase para que estén disponibles para todos los vendedores
+ * Guarda o actualiza las plantillas en Supabase para la agencia del usuario
  */
 export async function POST(req: NextRequest) {
   try {
@@ -84,19 +93,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Payload de plantillas inválido' }, { status: 400 })
     }
 
-    const supabase = createAdminClient()
+    const userClient = await createClient()
+    const context = await getAccountContext(userClient)
+    const adminSupabase = createAdminClient()
+
+    const configId = context.isOkmAccount
+      ? 'CONFIG_PUBLICATION_TEMPLATES'
+      : `CONFIG_PUBLICATION_TEMPLATES_${context.agencyId}`
+
+    const storagePath = context.isOkmAccount
+      ? 'config/publication_templates.json'
+      : `config/templates_${context.agencyId}.json`
+
     const jsonString = JSON.stringify(templates)
 
     // 1. Guardar en APP_ENVIOS
-    const { error: upsertErr } = await supabase
+    const { error: upsertErr } = await adminSupabase
       .from('APP_ENVIOS')
       .upsert({
-        ID: CONFIG_ID,
+        ID: configId,
         Patente: 'CONFIG',
         Vehiculo: 'TEMPLATES',
-        Cliente_Nombre: 'ADMIN_TEMPLATES',
+        Cliente_Nombre: context.agencyId,
         Observaciones: jsonString
-      })
+      }, { onConflict: 'ID' })
 
     if (upsertErr) {
       console.error('[API Templates] Error upserting en APP_ENVIOS:', upsertErr)
@@ -105,30 +125,16 @@ export async function POST(req: NextRequest) {
     // 2. Respaldo dual en Supabase Storage
     try {
       const blob = new Blob([jsonString], { type: 'application/json' })
-      const { error: uploadErr } = await supabase.storage
+      await adminSupabase.storage
         .from(STORAGE_BUCKET)
-        .upload(STORAGE_PATH, blob, {
-          contentType: 'application/json',
-          upsert: true
-        })
-
-      if (uploadErr) {
-        console.warn('[API Templates] Storage backup notice:', uploadErr.message)
-      }
-    } catch (storageException) {
-      console.warn('[API Templates] Exception en storage backup:', storageException)
+        .upload(storagePath, blob, { upsert: true })
+    } catch (storageErr) {
+      console.warn('[API Templates] Error en respaldo de Storage:', storageErr)
     }
 
-    return NextResponse.json({
-      success: true,
-      count: templates.length,
-      syncedAt: new Date().toISOString()
-    })
+    return NextResponse.json({ success: true, count: templates.length, agencyId: context.agencyId })
   } catch (err: any) {
     console.error('[API Templates] POST Error:', err)
-    return NextResponse.json(
-      { success: false, error: err.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }
 }

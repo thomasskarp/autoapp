@@ -8,7 +8,7 @@ export async function GET() {
 
     try {
       const { createClient } = await import('@/lib/supabase/server')
-      const { getUserAgencyId, getValidInstagramToken, DEFAULT_AGENCY_ID } = await import('@/lib/services/integrations')
+      const { getUserAgencyId, getValidInstagramToken } = await import('@/lib/services/integrations')
       const supabase = await createClient()
       const agencyId = await getUserAgencyId(supabase)
       const tokenRes = await getValidInstagramToken(supabase, agencyId)
@@ -21,22 +21,15 @@ export async function GET() {
       if (tokenRes.username) {
         username = tokenRes.username
       }
-
-      if (!accessToken && (!agencyId || agencyId === DEFAULT_AGENCY_ID)) {
-        igUserId = process.env.INSTAGRAM_ACCOUNT_ID?.trim() || null
-        accessToken = process.env.INSTAGRAM_ACCESS_TOKEN?.trim() || process.env.FACEBOOK_PAGE_ACCESS_TOKEN?.trim() || null
-        username = process.env.INSTAGRAM_USERNAME?.trim() || null
-      }
     } catch (dbErr) {
-      igUserId = process.env.INSTAGRAM_ACCOUNT_ID?.trim() || null
-      accessToken = process.env.INSTAGRAM_ACCESS_TOKEN?.trim() || process.env.FACEBOOK_PAGE_ACCESS_TOKEN?.trim() || null
-      username = process.env.INSTAGRAM_USERNAME?.trim() || null
+      accessToken = null
+      igUserId = null
+      username = null
     }
 
     if (!igUserId || !accessToken) {
       return NextResponse.json({ connected: false, message: 'Credenciales de Instagram no configuradas' })
     }
-
 
     // Consultar perfil de Instagram Business en vivo
     const res = await fetch(`https://graph.facebook.com/v21.0/${igUserId}?fields=id,username,name,profile_picture_url,biography,media_count,followers_count&access_token=${accessToken}`)
@@ -53,7 +46,7 @@ export async function GET() {
       connected: true,
       igUserId: data.id,
       username: data.username || username,
-      name: data.name || 'okm motors',
+      name: data.name || username || 'Instagram',
       profilePic: data.profile_picture_url || null,
       mediaCount: data.media_count || 0,
       followersCount: data.followers_count || 0,

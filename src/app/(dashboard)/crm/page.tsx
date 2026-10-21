@@ -2,11 +2,23 @@ import { getAllCachedVehicles } from '@/lib/services/vehicles-service'
 import { Header } from '@/components/layout/header'
 import { CrmVehiclesClient } from '@/components/crm/crm-vehicles-client'
 import { Settings } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
+import { getAccountContext } from '@/lib/services/account-context'
+import { filterVehiclesForAgency } from '@/lib/services/agency-vehicles'
 
-export const revalidate = 30
+export const revalidate = 0
 
 export default async function CRMPage() {
-  const allVehicles = await getAllCachedVehicles()
+  const supabase = await createClient()
+  const context = await getAccountContext(supabase)
+  const rawVehicles = await getAllCachedVehicles()
+
+  const allVehicles = await filterVehiclesForAgency(
+    supabase,
+    rawVehicles,
+    context.agencyId,
+    context.isOkmAccount
+  )
 
   const isAvailable = (estado?: string) => {
     if (!estado) return true

@@ -1,31 +1,109 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { AgencyIntegration } from '@/lib/supabase/types'
+import { getAccountContext, OKM_AGENCY_ID } from '@/lib/services/account-context'
 
-export const DEFAULT_AGENCY_ID = 'a1000000-0000-0000-0000-000000000001'
+export const DEFAULT_AGENCY_ID = OKM_AGENCY_ID
 
 /**
  * Obtiene el agency_id asociado a un usuario autenticado
  */
 export async function getUserAgencyId(supabase: SupabaseClient, userId?: string): Promise<string> {
-  if (!userId) {
-    const { data: { user } } = await supabase.auth.getUser()
-    userId = user?.id
-  }
-
-  if (!userId) {
-    return DEFAULT_AGENCY_ID
-  }
-
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('agency_id')
-    .eq('id', userId)
-    .single()
-
-  return profile?.agency_id || DEFAULT_AGENCY_ID
+  const ctx = await getAccountContext(supabase)
+  return ctx.agencyId || DEFAULT_AGENCY_ID
 }
 
-let agencyIntegrationsTableMissing = false
+// In-memory cache for fast lookups (30s)
+const integrationsCache: Record<string, { data: Record<string, AgencyIntegration>; timestamp: number }> = {}
+
+/**
+ * Carga el mapa de integraciones de una agencia desde APP_ENVIOS y Storage
+ */
+async function loadIntegrationsMap(
+  supabase: SupabaseClient,
+  agencyId: string
+): Promise<Record<string, AgencyIntegration>> {
+  const now = Date.now()
+  const cached = integrationsCache[agencyId]
+  if (cached && (now - cached.timestamp < 30000)) {
+    return cached.data
+  }
+
+  const rowId = `CONFIG_INTEGRATIONS_${agencyId}`
+  try {
+    const { data, error } = await supabase
+      .from('APP_ENVIOS')
+      .select('Observaciones')
+      .eq('ID', rowId)
+      .maybeSingle()
+
+    if (!error && data?.Observaciones) {
+      const parsed = JSON.parse(data.Observaciones)
+      integrationsCache[agencyId] = { data: parsed, timestamp: now }
+      return parsed
+    }
+  } catch (e) {
+    console.warn(`[Integrations] Error loading from APP_ENVIOS for ${agencyId}:`, e)
+  }
+
+  // Backup desde Supabase Storage
+  try {
+    const { data: fileData, error: fileErr } = await supabase.storage
+      .from('vehicle-images')
+      .download(`integrations/${agencyId}.json`)
+
+    if (!fileErr && fileData) {
+      const text = await fileData.text()
+      const parsed = JSON.parse(text)
+      integrationsCache[agencyId] = { data: parsed, timestamp: now }
+      return parsed
+    }
+  } catch (e) {}
+
+  return {}
+}
+
+/**
+ * Guarda el mapa completo de integraciones para una agencia en APP_ENVIOS y Storage
+ */
+async function persistIntegrationsMap(
+  supabase: SupabaseClient,
+  agencyId: string,
+  map: Record<string, AgencyIntegration>
+): Promise<boolean> {
+  integrationsCache[agencyId] = { data: map, timestamp: Date.now() }
+  const jsonStr = JSON.stringify(map)
+  const rowId = `CONFIG_INTEGRATIONS_${agencyId}`
+
+  let success = false
+  try {
+    const { error } = await supabase
+      .from('APP_ENVIOS')
+      .upsert({
+        ID: rowId,
+        Patente: 'CONFIG',
+        Vehiculo: 'INTEGRATIONS',
+        Cliente_Nombre: agencyId,
+        Fecha_Envio: new Date().toISOString(),
+        Estado_Envio: 'ACTIVO',
+        Observaciones: jsonStr,
+      }, { onConflict: 'ID' })
+
+    if (!error) success = true
+  } catch (e) {
+    console.error(`[Integrations] Error saving to APP_ENVIOS for ${agencyId}:`, e)
+  }
+
+  // Dual backup en Storage
+  try {
+    const blob = new Blob([jsonStr], { type: 'application/json' })
+    await supabase.storage
+      .from('vehicle-images')
+      .upload(`integrations/${agencyId}.json`, blob, { upsert: true })
+    success = true
+  } catch (e) {}
+
+  return success
+}
 
 /**
  * Consulta la integración de un proveedor para una agencia
@@ -35,29 +113,8 @@ export async function getAgencyIntegration(
   agencyId: string,
   provider: string = 'mercadolibre'
 ): Promise<AgencyIntegration | null> {
-  if (agencyIntegrationsTableMissing) return null
-
-  try {
-    const { data, error } = await supabase
-      .from('agency_integrations')
-      .select('*')
-      .eq('agency_id', agencyId)
-      .eq('provider', provider)
-      .maybeSingle()
-
-    if (error) {
-      if (error.message?.includes('schema cache')) {
-        agencyIntegrationsTableMissing = true
-      }
-      console.warn(`[Integrations Service] Error fetching integration for ${provider}:`, error.message)
-      return null
-    }
-
-    return data as AgencyIntegration | null
-  } catch (err: any) {
-    console.warn(`[Integrations Service] Exception fetching integration:`, err.message)
-    return null
-  }
+  const map = await loadIntegrationsMap(supabase, agencyId)
+  return map[provider] || null
 }
 
 /**
@@ -77,8 +134,12 @@ export async function saveAgencyIntegration(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const payload = {
-      agency_id: integration.agency_id,
+    const agencyId = integration.agency_id || DEFAULT_AGENCY_ID
+    const map = await loadIntegrationsMap(supabase, agencyId)
+
+    const record: AgencyIntegration = {
+      id: `${agencyId}_${integration.provider}`,
+      agency_id: agencyId,
       provider: integration.provider,
       access_token: integration.access_token,
       refresh_token: integration.refresh_token || null,
@@ -86,19 +147,14 @@ export async function saveAgencyIntegration(
       user_id: integration.user_id ? String(integration.user_id) : null,
       nickname: integration.nickname || null,
       metadata: integration.metadata || {},
-      updated_at: new Date().toISOString()
+      created_at: map[integration.provider]?.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     }
 
-    const { error } = await supabase
-      .from('agency_integrations')
-      .upsert(payload, { onConflict: 'agency_id,provider' })
+    map[integration.provider] = record
+    const saved = await persistIntegrationsMap(supabase, agencyId, map)
 
-    if (error) {
-      console.error('[Integrations Service] Error saving integration:', error.message)
-      return { success: false, error: error.message }
-    }
-
-    return { success: true }
+    return { success: saved }
   } catch (err: any) {
     console.error('[Integrations Service] Exception saving integration:', err)
     return { success: false, error: err.message }
@@ -106,32 +162,51 @@ export async function saveAgencyIntegration(
 }
 
 /**
- * Obtiene un token válido de MercadoLibre para la agencia,
- * realizando auto-renovación si el token está expirado.
+ * Elimina una integración para una agencia (Desconectar)
+ */
+export async function deleteAgencyIntegration(
+  supabase: SupabaseClient,
+  agencyId: string,
+  provider: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const map = await loadIntegrationsMap(supabase, agencyId)
+    delete map[provider]
+    if (provider === 'facebook_page') {
+      delete map['facebook']
+      delete map['meta']
+    }
+    const saved = await persistIntegrationsMap(supabase, agencyId, map)
+    return { success: saved }
+  } catch (err: any) {
+    return { success: false, error: err.message }
+  }
+}
+
+/**
+ * Obtiene un token válido de MercadoLibre para la agencia
  */
 export async function getValidMercadoLibreToken(
   supabase: SupabaseClient,
   agencyId: string
-): Promise<{ accessToken: string | null; refreshed: boolean; source: 'db' | 'env' | 'none' }> {
+): Promise<{ accessToken: string | null; refreshed: boolean; source: 'db' | 'none' }> {
   const integration = await getAgencyIntegration(supabase, agencyId, 'mercadolibre')
 
-  if (integration && integration.access_token) {
+  if (integration && integration.access_token && integration.access_token !== 'PENDING_OAUTH') {
     const isExpired = integration.expires_at 
-      ? new Date(integration.expires_at).getTime() <= Date.now() + 60000 // Buffer de 1 minuto
+      ? new Date(integration.expires_at).getTime() <= Date.now() + 60000
       : false
 
-    // Si no está vencido, retornar token existente
     if (!isExpired) {
       return { accessToken: integration.access_token, refreshed: false, source: 'db' }
     }
 
-    // Si está vencido y tenemos refresh_token, renovar con MercadoLibre
+    // Auto-refresh si tiene refresh_token
     if (integration.refresh_token) {
-      const clientId = process.env.MERCADOLIBRE_CLIENT_ID
-      const clientSecret = process.env.MERCADOLIBRE_CLIENT_SECRET
+      const clientId = integration.metadata?.client_id || process.env.MERCADOLIBRE_CLIENT_ID
+      const clientSecret = integration.metadata?.client_secret || process.env.MERCADOLIBRE_CLIENT_SECRET
 
       if (clientId && clientSecret) {
-        console.log(`[Integrations] Renovando token expirado para agencia ${agencyId}...`)
         try {
           const res = await fetch('https://api.mercadolibre.com/oauth/token', {
             method: 'POST',
@@ -157,28 +232,19 @@ export async function getValidMercadoLibreToken(
               refresh_token: data.refresh_token || integration.refresh_token,
               expires_at: expiresAt,
               user_id: data.user_id ? String(data.user_id) : integration.user_id,
-              nickname: integration.nickname
+              nickname: integration.nickname,
+              metadata: integration.metadata,
             })
 
-            console.log(`[Integrations] Token renovado exitosamente para agencia ${agencyId}`)
             return { accessToken: data.access_token, refreshed: true, source: 'db' }
           }
         } catch (rErr) {
-          console.error('[Integrations] Falló la llamada de refresco a MercadoLibre:', rErr)
+          console.error('[Integrations] Error refrescando token de MercadoLibre:', rErr)
         }
       }
     }
 
-    // Si no se pudo renovar, probar con el último token guardado como fallback
     return { accessToken: integration.access_token, refreshed: false, source: 'db' }
-  }
-
-  // Fallback a variable de entorno solo para agencia por defecto de desarrollo
-  if (agencyId === DEFAULT_AGENCY_ID) {
-    const envToken = process.env.MERCADOLIBRE_ACCESS_TOKEN?.trim()
-    if (envToken) {
-      return { accessToken: envToken, refreshed: false, source: 'env' }
-    }
   }
 
   return { accessToken: null, refreshed: false, source: 'none' }
@@ -190,33 +256,18 @@ export async function getValidMercadoLibreToken(
 export async function getValidFacebookPageToken(
   supabase: SupabaseClient,
   agencyId: string
-): Promise<{ pageId: string | null; pageToken: string | null; pageName: string | null; source: 'db' | 'env' | 'none' }> {
-  // Primero buscar en base de datos en agency_integrations con provider = 'facebook_page' o 'facebook'
+): Promise<{ pageId: string | null; pageToken: string | null; pageName: string | null; source: 'db' | 'none' }> {
   const integration = (await getAgencyIntegration(supabase, agencyId, 'facebook_page')) || 
-                      (await getAgencyIntegration(supabase, agencyId, 'facebook'))
+                      (await getAgencyIntegration(supabase, agencyId, 'facebook')) ||
+                      (await getAgencyIntegration(supabase, agencyId, 'meta'))
 
   if (integration && integration.access_token) {
-    const pageId = integration.metadata?.page_id || integration.user_id || process.env.FACEBOOK_PAGE_ID || null
+    const pageId = integration.metadata?.page_id || integration.user_id || null
     return {
       pageId: pageId ? String(pageId) : null,
       pageToken: integration.access_token,
       pageName: integration.nickname || integration.metadata?.page_name || 'Fan Page Concesionaria',
       source: 'db'
-    }
-  }
-
-  // Fallback a variables de entorno solo para agencia por defecto de desarrollo
-  if (agencyId === DEFAULT_AGENCY_ID) {
-    const envPageId = process.env.FACEBOOK_PAGE_ID?.trim() || null
-    const envPageToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN?.trim() || null
-
-    if (envPageId && envPageToken) {
-      return {
-        pageId: envPageId,
-        pageToken: envPageToken,
-        pageName: process.env.FACEBOOK_PAGE_NAME?.trim() || 'Fan Page Oficial',
-        source: 'env'
-      }
     }
   }
 
@@ -229,45 +280,29 @@ export async function getValidFacebookPageToken(
 export async function getValidInstagramToken(
   supabase: SupabaseClient,
   agencyId: string
-): Promise<{ igUserId: string | null; accessToken: string | null; username: string | null; source: 'db' | 'env' | 'none' }> {
-  // 1. Buscar en agency_integrations con provider = 'instagram'
+): Promise<{ igUserId: string | null; accessToken: string | null; username: string | null; source: 'db' | 'none' }> {
   const igIntegration = await getAgencyIntegration(supabase, agencyId, 'instagram')
   if (igIntegration && igIntegration.access_token) {
     return {
-      igUserId: igIntegration.user_id || process.env.INSTAGRAM_ACCOUNT_ID || '17841474277477470',
+      igUserId: igIntegration.user_id || null,
       accessToken: igIntegration.access_token,
-      username: igIntegration.nickname || process.env.INSTAGRAM_USERNAME || 'okmmotors',
+      username: igIntegration.nickname || null,
       source: 'db'
     }
   }
 
-  // 2. Buscar si la Fan Page tiene asociado el Instagram Business Account
   const fbIntegration = (await getAgencyIntegration(supabase, agencyId, 'facebook_page')) ||
-                        (await getAgencyIntegration(supabase, agencyId, 'facebook'))
+                        (await getAgencyIntegration(supabase, agencyId, 'facebook')) ||
+                        (await getAgencyIntegration(supabase, agencyId, 'meta'))
+
   if (fbIntegration && fbIntegration.access_token) {
     const igFromMeta = fbIntegration.metadata?.instagram_business_account
     if (igFromMeta?.id) {
       return {
         igUserId: igFromMeta.id,
         accessToken: fbIntegration.access_token,
-        username: igFromMeta.username || 'okmmotors',
+        username: igFromMeta.username || null,
         source: 'db'
-      }
-    }
-  }
-
-  // 3. Fallback a variables de entorno solo para agencia por defecto de desarrollo
-  if (agencyId === DEFAULT_AGENCY_ID) {
-    const envIgUserId = process.env.INSTAGRAM_ACCOUNT_ID?.trim() || null
-    const envAccessToken = process.env.INSTAGRAM_ACCESS_TOKEN?.trim() || process.env.FACEBOOK_PAGE_ACCESS_TOKEN?.trim() || null
-    const envUsername = process.env.INSTAGRAM_USERNAME?.trim() || null
-
-    if (envAccessToken) {
-      return {
-        igUserId: envIgUserId,
-        accessToken: envAccessToken,
-        username: envUsername,
-        source: 'env'
       }
     }
   }
@@ -281,7 +316,7 @@ export async function getValidInstagramToken(
 export async function getValidTikTokToken(
   supabase: SupabaseClient,
   agencyId: string
-): Promise<{ openId: string | null; accessToken: string | null; username: string | null; displayName: string | null; source: 'db' | 'env' | 'none' }> {
+): Promise<{ openId: string | null; accessToken: string | null; username: string | null; displayName: string | null; source: 'db' | 'none' }> {
   const integration = await getAgencyIntegration(supabase, agencyId, 'tiktok')
   if (integration && integration.access_token) {
     return {
@@ -293,25 +328,5 @@ export async function getValidTikTokToken(
     }
   }
 
-  // Fallback a variables de entorno solo para desarrollo
-  if (agencyId === DEFAULT_AGENCY_ID) {
-    const envOpenId = process.env.TIKTOK_OPEN_ID?.trim() || null
-    const envAccessToken = process.env.TIKTOK_ACCESS_TOKEN?.trim() || null
-    const envUsername = process.env.TIKTOK_USERNAME?.trim() || null
-
-    if (envAccessToken) {
-      return {
-        openId: envOpenId,
-        accessToken: envAccessToken,
-        username: envUsername,
-        displayName: process.env.TIKTOK_DISPLAY_NAME || envUsername || 'TikTok Oficial',
-        source: 'env'
-      }
-    }
-  }
-
   return { openId: null, accessToken: null, username: null, displayName: null, source: 'none' }
 }
-
-
-

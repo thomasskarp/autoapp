@@ -6,16 +6,12 @@ export async function POST() {
     let agencyId = ''
     try {
       const { createClient } = await import('@/lib/supabase/server')
-      const { getUserAgencyId } = await import('@/lib/services/integrations')
+      const { getUserAgencyId, deleteAgencyIntegration } = await import('@/lib/services/integrations')
       supabase = await createClient()
       agencyId = await getUserAgencyId(supabase)
 
       if (supabase && agencyId) {
-        await supabase
-          .from('agency_integrations')
-          .delete()
-          .eq('agency_id', agencyId)
-          .eq('provider', 'mercadolibre')
+        await deleteAgencyIntegration(supabase, agencyId, 'mercadolibre')
       }
     } catch (dbErr) {
       console.warn('[Disconnect API] Error clearing from database:', dbErr)

@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { Header } from '@/components/layout/header'
 import { VehicleForm } from '@/components/stock/vehicle-form'
+import { getAccountContext } from '@/lib/services/account-context'
+import { getAgencyVehicleIds, getAllIndependentVehicleIds } from '@/lib/services/agency-vehicles'
 import { notFound } from 'next/navigation'
 
 interface Props {
@@ -10,6 +12,21 @@ interface Props {
 export default async function EditVehiclePage({ params }: Props) {
   const { id } = await params
   const supabase = await createClient()
+  const context = await getAccountContext(supabase)
+
+  // Validar permisos de acceso según agencia
+  if (!context.isOkmAccount) {
+    const agencyIds = await getAgencyVehicleIds(supabase, context.agencyId)
+    if (!agencyIds.includes(String(id))) {
+      notFound()
+    }
+  } else {
+    // Si es OKM, no permitir editar autos de agencias independientes
+    const foreignIds = await getAllIndependentVehicleIds(supabase)
+    if (foreignIds.includes(String(id))) {
+      notFound()
+    }
+  }
 
   let { data: vehicle } = await supabase
     .from('DB_STOCK')

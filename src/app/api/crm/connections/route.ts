@@ -67,8 +67,8 @@ export async function POST(req: Request) {
 
     if (action === 'test_meta') {
       // Prueba de validación de token de Meta contra Graph API (sin enviar mensajes)
-      const token = data.pageToken || process.env.FACEBOOK_PAGE_ACCESS_TOKEN
-      const pageId = data.pageId || process.env.FACEBOOK_PAGE_ID
+      const token = data?.pageToken
+      const pageId = data?.pageId
       if (!token || !pageId) {
         return NextResponse.json({ success: false, message: 'Falta Page ID o Access Token para probar.' })
       }
@@ -86,9 +86,9 @@ export async function POST(req: Request) {
 
     if (action === 'test_meli') {
       // Prueba de validación de MercadoLibre (sin publicar ni enviar)
-      const token = data.accessToken || process.env.MERCADOLIBRE_ACCESS_TOKEN
+      const token = data?.accessToken
       if (!token) {
-        return NextResponse.json({ success: false, message: 'Token de acceso no ingresado aún. Podés vincular con el botón de OAuth o ingresar el token.' })
+        return NextResponse.json({ success: false, message: 'Token de acceso no ingresado aún. Ingresá el token para probar.' })
       }
       try {
         const meliRes = await fetch('https://api.mercadolibre.com/users/me', {
@@ -106,8 +106,8 @@ export async function POST(req: Request) {
 
     if (action === 'test_whatsapp_cloud') {
       // Prueba de validación de WhatsApp Cloud API (solo valida el Phone Number ID en Meta)
-      const token = data.accessToken || process.env.WHATSAPP_CLOUD_ACCESS_TOKEN
-      const phoneId = data.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID
+      const token = data?.accessToken
+      const phoneId = data?.phoneNumberId
       if (!token || !phoneId) {
         return NextResponse.json({ success: false, message: 'Falta Phone Number ID o Access Token para verificar.' })
       }

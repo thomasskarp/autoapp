@@ -1,26 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { CircularConfig } from '@/lib/services/circular-service'
+import { getAccountContext } from '@/lib/services/account-context'
 
 export const dynamic = 'force-dynamic'
 
-const CONFIG_ID = 'CONFIG_CIRCULARES_OKM'
 const STORAGE_BUCKET = 'vehicle-images'
-const STORAGE_PATH = 'config/circulares_0km.json'
 
 /**
  * GET /api/circulares
- * Retorna todas las circulares de financiación 0KM sincronizadas en la nube (Supabase)
+ * Retorna las circulares de financiación 0KM sincronizadas en Supabase para la agencia
  */
 export async function GET() {
   try {
-    const supabase = createAdminClient()
+    const userClient = await createClient()
+    const context = await getAccountContext(userClient)
+    const adminSupabase = createAdminClient()
+
+    const configId = context.isOkmAccount
+      ? 'CONFIG_CIRCULARES_OKM'
+      : `CONFIG_CIRCULARES_${context.agencyId}`
+
+    const storagePath = context.isOkmAccount
+      ? 'config/circulares_0km.json'
+      : `config/circulares_${context.agencyId}.json`
 
     // 1. Intentar leer desde tabla de configuración APP_ENVIOS
-    const { data: dbData, error: dbErr } = await supabase
+    const { data: dbData } = await adminSupabase
       .from('APP_ENVIOS')
       .select('Observaciones')
-      .eq('ID', CONFIG_ID)
+      .eq('ID', configId)
       .maybeSingle()
 
     if (dbData?.Observaciones) {
@@ -37,9 +46,9 @@ export async function GET() {
 
     // 2. Respaldo: intentar leer desde Supabase Storage
     try {
-      const { data: fileData, error: storageErr } = await supabase.storage
+      const { data: fileData } = await adminSupabase.storage
         .from(STORAGE_BUCKET)
-        .download(STORAGE_PATH)
+        .download(storagePath)
 
       if (fileData) {
         const text = await fileData.text()
@@ -49,9 +58,7 @@ export async function GET() {
           { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } }
         )
       }
-    } catch (e) {
-      // Ignorar si no existe el archivo aún
-    }
+    } catch (e) {}
 
     return NextResponse.json(
       { success: true, circulares: {} },
@@ -68,7 +75,7 @@ export async function GET() {
 
 /**
  * POST /api/circulares
- * Guarda o actualiza las circulares en Supabase para que estén disponibles para todos los vendedores
+ * Guarda o actualiza las circulares en Supabase para la agencia del usuario
  */
 export async function POST(req: NextRequest) {
   try {
@@ -79,19 +86,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Payload de circulares inválido' }, { status: 400 })
     }
 
-    const supabase = createAdminClient()
+    const userClient = await createClient()
+    const context = await getAccountContext(userClient)
+    const adminSupabase = createAdminClient()
+
+    const configId = context.isOkmAccount
+      ? 'CONFIG_CIRCULARES_OKM'
+      : `CONFIG_CIRCULARES_${context.agencyId}`
+
+    const storagePath = context.isOkmAccount
+      ? 'config/circulares_0km.json'
+      : `config/circulares_${context.agencyId}.json`
+
     const jsonString = JSON.stringify(circulares)
 
     // 1. Guardar en APP_ENVIOS
-    const { error: upsertErr } = await supabase
+    const { error: upsertErr } = await adminSupabase
       .from('APP_ENVIOS')
       .upsert({
-        ID: CONFIG_ID,
+        ID: configId,
         Patente: 'CONFIG',
         Vehiculo: 'CIRCULARES',
-        Cliente_Nombre: 'ADMIN_CIRCULARES',
+        Cliente_Nombre: context.agencyId,
         Observaciones: jsonString
-      })
+      }, { onConflict: 'ID' })
 
     if (upsertErr) {
       console.error('[API Circulares] Error upserting en APP_ENVIOS:', upsertErr)
@@ -99,20 +117,15 @@ export async function POST(req: NextRequest) {
 
     // 2. Respaldo dual en Supabase Storage
     try {
-      await supabase.storage
+      const blob = new Blob([jsonString], { type: 'application/json' })
+      await adminSupabase.storage
         .from(STORAGE_BUCKET)
-        .upload(STORAGE_PATH, jsonString, {
-          contentType: 'application/json',
-          upsert: true
-        })
-    } catch (e) {
-      console.warn('[API Circulares] Respaldo en Storage advierte:', e)
+        .upload(storagePath, blob, { upsert: true })
+    } catch (storageErr) {
+      console.warn('[API Circulares] Error en respaldo de Storage:', storageErr)
     }
 
-    return NextResponse.json({
-      success: true,
-      count: Object.keys(circulares).length
-    })
+    return NextResponse.json({ success: true, count: Object.keys(circulares).length, agencyId: context.agencyId })
   } catch (err: any) {
     console.error('[API Circulares] POST Error:', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
