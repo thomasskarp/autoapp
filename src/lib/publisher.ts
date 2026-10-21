@@ -69,8 +69,16 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
   const anioRaw = vehicle.Año || vehicle.Anio || '2024'
 
   const marcaRaw = (vehicle.Marca || '').trim()
+  const rawModel = (vehicle.Modelo || '').trim()
+  const rawVersion = (vehicle.Version || '').trim()
+
+  // Combinar Modelo y Versión asegurando que no se repita
+  let modeloClean = rawModel
+  if (rawVersion && !rawModel.toLowerCase().includes(rawVersion.toLowerCase())) {
+    modeloClean = `${rawModel} ${rawVersion}`.trim()
+  }
   // Remove 4-digit years from Modelo and Version to avoid repeating the year in title
-  let modeloClean = `${vehicle.Modelo || ''} ${vehicle.Version || ''}`.replace(/\b(19|20)\d{2}\b/g, '').trim()
+  modeloClean = modeloClean.replace(/\b(19|20)\d{2}\b/g, '').trim()
   
   // Remove Marca from start of Modelo if it exists
   if (modeloClean.toLowerCase().startsWith(marcaRaw.toLowerCase())) {
@@ -84,6 +92,24 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
     }
   }
 
+  // Capitalize nicely, preserving car acronyms (SR, AT, MT, TDI, 4x4, etc.)
+  const formatModelTitle = (s: string) => {
+    if (!s) return ''
+    const upperAcronyms = new Set([
+      '4X4', '4X2', '2WD', '4WD', 'AWD', 'SR', 'SRV', 'SRX', 'DX', 'AT', 'A/T', 'MT', 'M/T',
+      'TDI', 'TSI', 'TFSI', 'HDI', 'CD', 'C/D', 'CS', 'C/S', 'DC', 'D/C',
+      'V6', 'V8', 'GT', 'GTS', 'GTI', 'GLI', 'RS', 'XLI', 'XEI', 'SEG',
+      'LT', 'LTZ', 'XL', 'XLT', 'FX4', 'HEV', 'EV', 'CVT'
+    ])
+    return s.split(/\s+/).map(w => {
+      const upper = w.toUpperCase()
+      if (upperAcronyms.has(upper)) return upper
+      if (upper === '4X4') return '4x4'
+      if (upper === '4X2') return '4x2'
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+    }).join(' ')
+  }
+
   // Capitalize every word (Title Case)
   const toTitleCase = (s: string) => {
     if (!s) return ''
@@ -91,7 +117,7 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
   }
 
   const marcaFormatted = toTitleCase(marcaRaw)
-  const modeloFormatted = toTitleCase(modeloClean)
+  const modeloFormatted = formatModelTitle(modeloClean)
 
   // Extract ALL photos (Portada + FOTOS_EXTRA parsed safely as JSON array or string list)
   const allPhotoLinks = getAllVehiclePhotos(vehicle)

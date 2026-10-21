@@ -1643,40 +1643,39 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
     let matched = null
 
     for (const targetStr of targets) {
-      const baseModel = isModel ? targetStr.split(/[\s\-_]+/)[0] : targetStr
-
       // Match 1: Coincidencia exacta
       matched = options.find(opt => {
         const t = normalizeStr(opt.innerText || opt.textContent || '')
         return t === targetStr
       })
 
-      // Match 2: Empieza con o el objetivo empieza con la opción
-      if (!matched) {
+      // Match 2: Empieza con o el objetivo empieza con la opción (solo si NO es Modelo)
+      if (!matched && !isModel) {
         matched = options.find(opt => {
           const t = normalizeStr(opt.innerText || opt.textContent || '')
           return t.startsWith(targetStr) || targetStr.startsWith(t)
         })
       }
 
-      // Match 3: Modelo base (ej: "408" para "408 Allure")
-      if (!matched && (isModel || baseModel)) {
+      // Match 3: Modelo base (ej: "408" para "408 Allure", solo si NO es Modelo personalizado)
+      if (!matched && !isModel) {
+        const base = targetStr.split(/[\s\-_]+/)[0]
         matched = options.find(opt => {
           const t = normalizeStr(opt.innerText || opt.textContent || '')
-          return t === baseModel || t.startsWith(baseModel) || baseModel.startsWith(t)
+          return t === base || t.startsWith(base) || base.startsWith(t)
         })
       }
 
-      // Match 4: Parcial / inclusión
-      if (!matched) {
+      // Match 4: Parcial / inclusión (solo si NO es Modelo)
+      if (!matched && !isModel) {
         matched = options.find(opt => {
           const t = normalizeStr(opt.innerText || opt.textContent || '')
-          return t.includes(targetStr) || targetStr.includes(t) || (baseModel && (t.includes(baseModel) || baseModel.includes(t)))
+          return t.includes(targetStr) || targetStr.includes(t)
         })
       }
 
-      // Match 5: Por tokens si tiene varias palabras
-      if (!matched && targetStr.includes(' ')) {
+      // Match 5: Por tokens si tiene varias palabras (solo si NO es Modelo)
+      if (!matched && !isModel && targetStr.includes(' ')) {
         const tokens = targetStr.split(/\s+/).filter(w => w.length >= 3)
         matched = options.find(opt => {
           const t = normalizeStr(opt.innerText || opt.textContent || '')
@@ -1711,6 +1710,18 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
       matched.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
       await new Promise(r => setTimeout(r, 150))
       return true
+    } else if (isModel) {
+      // Para Modelo: si las opciones del menú solo tienen modelos base (ej: "Hilux"),
+      // NO hacer clic en la opción para NO borrar la versión ("4x4 SR AT").
+      // Cerrar el menú desplegable y conservar el texto completo tipeado.
+      console.log(`ℹ️ [Auto-Cyborg] Conservando modelo y versión completa en Modelo: "${targets[0]}"`)
+      if (input) {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }))
+        input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', keyCode: 27, bubbles: true }))
+        input.blur?.()
+        setReactInputValue(input, targets[0])
+      }
+      return true
     }
   }
 
@@ -1719,6 +1730,9 @@ async function selectFacebookDropdownOption(keywords, targetValues, isModel = fa
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }))
     input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, bubbles: true }))
     await new Promise(r => setTimeout(r, 150))
+    if (isModel && targets[0]) {
+      setReactInputValue(input, targets[0])
+    }
   }
 
   return false
@@ -1851,12 +1865,19 @@ async function runFacebookVehicleAutomation(car) {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // PASO 5: MODELO (Screen 2: buscar modelo base ej. "408" y modelo completo)
+  // PASO 5: MODELO Y VERSIÓN (Screen 2: cargar modelo y versión completo, ej: "Hilux 4x4 SR AT")
   // ─────────────────────────────────────────────────────────────────────────
-  const carModel = (car.modelo || '').trim()
-  if (carModel) {
-    const baseModel = carModel.split(/[\s\-_]+/)[0]
-    await selectFacebookDropdownOption(['modelo', 'model'], [baseModel, carModel], true)
+  let fullModel = (car.modelo || '').trim()
+  const carVersion = (car.version || '').trim()
+  if (carVersion && !fullModel.toLowerCase().includes(carVersion.toLowerCase())) {
+    fullModel = `${fullModel} ${carVersion}`.trim()
+  }
+  // Si fullModel comienza con la marca (ej: "Toyota Hilux..."), remover la marca para no duplicarla
+  if (car.marca && fullModel.toLowerCase().startsWith(car.marca.toLowerCase())) {
+    fullModel = fullModel.substring(car.marca.length).trim()
+  }
+  if (fullModel) {
+    await selectFacebookDropdownOption(['modelo', 'model'], fullModel, true)
     await new Promise(r => setTimeout(r, 200))
   }
 
