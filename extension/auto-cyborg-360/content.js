@@ -1506,6 +1506,55 @@ function resolveCarTransmission(car) {
   return ['transmision manual', 'manual']
 }
 
+// Combina Modelo y Versión asegurando que ninguna palabra o versión se repita
+function combineModelAndVersion(modelRaw, versionRaw) {
+  const model = (modelRaw || '').replace(/\s+/g, ' ').trim()
+  const version = (versionRaw || '').replace(/\s+/g, ' ').trim()
+
+  if (!version) return model
+  if (!model) return version
+
+  const modelLower = model.toLowerCase()
+  const versionLower = version.toLowerCase()
+
+  // 1. Si el modelo ya contiene la versión completa, no agregar nada
+  if (modelLower.includes(versionLower)) {
+    return model
+  }
+
+  // 2. Si la versión ya contiene el modelo al inicio (ej: model="Hilux", version="Hilux 4x4 SR"), usar la versión
+  if (versionLower.startsWith(modelLower)) {
+    return version
+  }
+
+  // 3. Si todas las palabras clave de la versión ya están en el modelo, no duplicar
+  const vWords = version.split(' ').filter(Boolean)
+  const allWordsInModel = vWords.every(w => modelLower.includes(w.toLowerCase()))
+  if (allWordsInModel) {
+    return model
+  }
+
+  // 4. Comprobar superposición en el límite (ej: model="Hilux 4x4", version="4x4 SR AT")
+  const mWords = model.split(' ').filter(Boolean)
+  let overlapCount = 0
+  const maxOverlap = Math.min(mWords.length, vWords.length)
+  for (let k = maxOverlap; k >= 1; k--) {
+    const mSuffix = mWords.slice(mWords.length - k).map(w => w.toLowerCase()).join(' ')
+    const vPrefix = vWords.slice(0, k).map(w => w.toLowerCase()).join(' ')
+    if (mSuffix === vPrefix) {
+      overlapCount = k
+      break
+    }
+  }
+
+  if (overlapCount > 0) {
+    const remainingVersion = vWords.slice(overlapCount).join(' ')
+    return remainingVersion ? `${model} ${remainingVersion}`.trim() : model
+  }
+
+  return `${model} ${version}`.trim()
+}
+
 // Escribe texto en un input de React 18 / Facebook simulando teclado humano para activar typeaheads
 async function typeIntoFacebookInput(input, text) {
   if (!input || !text) return false
@@ -1867,11 +1916,7 @@ async function runFacebookVehicleAutomation(car) {
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 5: MODELO Y VERSIÓN (Screen 2: cargar modelo y versión completo, ej: "Hilux 4x4 SR AT")
   // ─────────────────────────────────────────────────────────────────────────
-  let fullModel = (car.modelo || '').trim()
-  const carVersion = (car.version || '').trim()
-  if (carVersion && !fullModel.toLowerCase().includes(carVersion.toLowerCase())) {
-    fullModel = `${fullModel} ${carVersion}`.trim()
-  }
+  let fullModel = combineModelAndVersion(car.modelo, car.version)
   // Si fullModel comienza con la marca (ej: "Toyota Hilux..."), remover la marca para no duplicarla
   if (car.marca && fullModel.toLowerCase().startsWith(car.marca.toLowerCase())) {
     fullModel = fullModel.substring(car.marca.length).trim()

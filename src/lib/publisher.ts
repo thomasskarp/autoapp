@@ -64,6 +64,57 @@ export async function downloadImageAsBase64(url: string): Promise<string | null>
   }
 }
 
+/**
+ * Combina Modelo y Versión asegurando que ninguna palabra o versión se repita
+ */
+export function combineModelAndVersion(modelRaw: string, versionRaw: string): string {
+  const model = (modelRaw || '').replace(/\s+/g, ' ').trim()
+  const version = (versionRaw || '').replace(/\s+/g, ' ').trim()
+
+  if (!version) return model
+  if (!model) return version
+
+  const modelLower = model.toLowerCase()
+  const versionLower = version.toLowerCase()
+
+  // 1. Si el modelo ya contiene la versión completa, no agregar nada
+  if (modelLower.includes(versionLower)) {
+    return model
+  }
+
+  // 2. Si la versión ya contiene el modelo al inicio (ej: model="Hilux", version="Hilux 4x4 SR"), usar la versión
+  if (versionLower.startsWith(modelLower)) {
+    return version
+  }
+
+  // 3. Si todas las palabras de la versión ya están presentes en el modelo, no duplicar
+  const vWords = version.split(' ').filter(Boolean)
+  const allWordsInModel = vWords.length > 0 && vWords.every(w => modelLower.includes(w.toLowerCase()))
+  if (allWordsInModel) {
+    return model
+  }
+
+  // 4. Comprobar superposición en el límite (ej: model="Hilux 4x4", version="4x4 SR AT")
+  const mWords = model.split(' ').filter(Boolean)
+  let overlapCount = 0
+  const maxOverlap = Math.min(mWords.length, vWords.length)
+  for (let k = maxOverlap; k >= 1; k--) {
+    const mSuffix = mWords.slice(mWords.length - k).map(w => w.toLowerCase()).join(' ')
+    const vPrefix = vWords.slice(0, k).map(w => w.toLowerCase()).join(' ')
+    if (mSuffix === vPrefix) {
+      overlapCount = k
+      break
+    }
+  }
+
+  if (overlapCount > 0) {
+    const remainingVersion = vWords.slice(overlapCount).join(' ')
+    return remainingVersion ? `${model} ${remainingVersion}`.trim() : model
+  }
+
+  return `${model} ${version}`.trim()
+}
+
 // Format vehicle data for Extension payload
 export function formatVehicleForExtension(vehicle: any, options?: { customCopy?: string; customTitle?: string }): PublishVehiclePayload {
   const anioRaw = vehicle.Año || vehicle.Anio || '2024'
@@ -73,10 +124,7 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
   const rawVersion = (vehicle.Version || '').trim()
 
   // Combinar Modelo y Versión asegurando que no se repita
-  let modeloClean = rawModel
-  if (rawVersion && !rawModel.toLowerCase().includes(rawVersion.toLowerCase())) {
-    modeloClean = `${rawModel} ${rawVersion}`.trim()
-  }
+  let modeloClean = combineModelAndVersion(rawModel, rawVersion)
   // Remove 4-digit years from Modelo and Version to avoid repeating the year in title
   modeloClean = modeloClean.replace(/\b(19|20)\d{2}\b/g, '').trim()
   
@@ -176,7 +224,7 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
     patente: vehicle.Patente || '',
     marca: marcaFormatted || 'Vehículo',
     modelo: modeloFormatted || 'Modelo',
-    version: vehicle.Version || '',
+    version: (vehicle.Version || '').replace(/\s+/g, ' ').trim(),
     anio: anioRaw,
     precio: formattedPrice,
     precioNumero: numericPrice,
