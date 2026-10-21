@@ -21,8 +21,16 @@ import {
   X, Loader2, CheckCircle2, Copy, Sparkles, Check, Image as ImageIcon,
   Save, Bookmark, Plus, Trash2, FileText, ChevronDown, ExternalLink,
   MessageSquare, RefreshCw, Film, Megaphone, Video, Star,
-  Edit2, Upload
+  Edit2, Upload, Cloud
 } from 'lucide-react'
+import {
+  CopyTemplate,
+  DEFAULT_TEMPLATES,
+  getAllTemplates,
+  saveAllTemplates,
+  syncTemplatesFromCloud,
+} from '@/lib/services/template-service'
+export type { CopyTemplate }
 import dynamic from 'next/dynamic'
 import { AdFlyerPreview, AdFlyerPreviewHandle } from './ad-flyer-preview'
 import type { VideoReelModalHandle, PublishDestination } from '@/components/publications/video-reel-modal'
@@ -113,103 +121,6 @@ interface Props {
   onClose: () => void
   initialPlatform?: string | null
 }
-
-export interface CopyTemplate {
-  id: string
-  name: string
-  content: string
-  isDefault?: boolean
-  vehicleType?: 'all' | '0km' | 'usado'
-}
-
-const DEFAULT_TEMPLATES: CopyTemplate[] = [
-  {
-    id: 'default-comercial',
-    name: '🏷️ Comercial Estándar',
-    isDefault: true,
-    vehicleType: 'all',
-    content: `🚗 *{MARCA} {MODELO} {VERSION}* ({AÑO})
-Km: {KM}
-💰 Precio de Venta: {PRECIO}
-💵 Entrega Mínima: {ENTREGA}
-
-⛽ Combustible: {COMBUSTIBLE} | Caja: {TRANSMISION}
-📝 {DESCRIPCION}`
-  },
-  {
-    id: 'default-marketplace',
-    name: '🔥 Marketplace / Oferta Directa',
-    isDefault: true,
-    vehicleType: 'all',
-    content: `🔥 IMPERDIBLE: {MARCA} {MODELO} {VERSION} ({AÑO}) — ¡Entrega Inmediata!
-📍 Kilometraje: {KM}
-💰 Precio de Contado: {PRECIO}
-💵 Anticipo / Cuotas: {ENTREGA}
-
-📋 Documentación 100% al día | Tomamos usados en parte de pago
-⛽ {COMBUSTIBLE} — {TRANSMISION}`
-  },
-  {
-    id: 'default-financiacion',
-    name: '⚡ Financiación Tasa 0%',
-    isDefault: true,
-    vehicleType: 'all',
-    content: `⚡ {MARCA} {MODELO} {VERSION} ({AÑO}) ⚡
-📍 KM: {KM}
-💰 PRECIO: {PRECIO}
-💵 RETIRA CON {ENTREGA}
-
-Tasa 0% :
-{CUOTAS}
-
-🔥 Financiación directa a sola firma
-📍 Resistencia, Chaco | WhatsApp 3624-750716`
-  },
-  {
-    id: 'default-reel',
-    name: '🎬 Reel / Video Viral',
-    isDefault: true,
-    vehicleType: 'all',
-    content: `🔥 {MARCA} {MODELO} {VERSION} ({AÑO}) 🔥
-📍 KM: {KM}
-💰 PRECIO: {PRECIO}
-💵 RETIRA CON {ENTREGA}
-
-⚡ ¡Subite hoy mismo con entrega inmediata!
-📲 Escribinos al WhatsApp directo o mensaje privado para coordinar tu test drive.
-📍 Resistencia, Chaco
-
-#autos #autosargentina #usadosseleccionados #concesionaria #parati #fyp #viral`
-  },
-  {
-    id: 'default-tiktok',
-    name: '🎵 TikTok Catálogo',
-    isDefault: true,
-    vehicleType: 'all',
-    content: `🚗 {MARCA} {MODELO} ({AÑO})
-📍 {KM} | {PRECIO}
-💰 Anticipo desde {ENTREGA} + cuotas fijas
-
-📲 Info en el link del perfil / WhatsApp 3624-750716
-Tomamos tu usado al mejor precio 🤝
-
-#autos #autosargentina #concesionaria #vendo #parati #fyp #viral`
-  },
-  {
-    id: 'default-whatsapp',
-    name: '💬 WhatsApp Estado',
-    isDefault: true,
-    vehicleType: 'all',
-    content: `⚡ *{MARCA} {MODELO} {VERSION}* ({AÑO}) ⚡
-📍 KM: {KM}
-💰 PRECIO: {PRECIO}
-💵 RETIRA CON {ENTREGA}
-
-🔥 Financiación directa a sola firma
-📍 Resistencia, Chaco | WhatsApp 3624-750716`
-  }
-]
-
 
 const PLATFORMS_META: Record<TargetPlatform, { name: string; label: string; color: string; bg: string; border: string; icon: string }> = {
   FB_MARKETPLACE: {
@@ -874,14 +785,10 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
     }
   }
 
-  // Storage helper
+  // Storage helper con sincronización en la nube (Supabase)
   const saveTemplatesToStorage = (updated: CopyTemplate[]) => {
     setTemplates(updated)
-    try {
-      localStorage.setItem('autoapp_publication_templates', JSON.stringify(updated))
-    } catch (e) {
-      console.warn('Error saving templates:', e)
-    }
+    saveAllTemplates(updated)
   }
 
   useEffect(() => {
@@ -890,31 +797,26 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
       setCanShare(true)
     }
 
-    // Load templates from localStorage and sanitize stale hardcoded years
-    try {
-      const saved = localStorage.getItem('autoapp_publication_templates')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const sanitized = parsed.map((t: CopyTemplate) => {
-            let content = t.content
-            if (content.includes('- 2026') || /-\s*2026\b/.test(content)) {
-              content = content.replace(/(-\s*)2026\b/g, '$1{AÑO}')
-            }
-            if (/\b2026\b(?=\s*(?:km|\{KM\}|\d{2,3}\.\d{3}))/.test(content)) {
-              content = content.replace(/\b2026\b(?=\s*(?:km|\{KM\}|\d{2,3}\.\d{3}))/g, '{AÑO}')
-            }
-            return {
-              ...t,
-              content,
-              vehicleType: t.vehicleType || 'all'
-            }
-          })
-          setTemplates(sanitized)
-        }
+    // 1. Cargar plantillas locales de inmediato (para evitar parpadeos)
+    const localTemplates = getAllTemplates()
+    setTemplates(localTemplates)
+
+    // 2. Sincronizar desde la nube en segundo plano (Supabase)
+    syncTemplatesFromCloud().then(cloudTpls => {
+      if (cloudTpls && cloudTpls.length > 0 && !isUserEditingRef.current) {
+        setTemplates(cloudTpls)
       }
-    } catch (e) {
-      console.warn('Error loading custom templates:', e)
+    }).catch(() => {})
+
+    // 3. Escuchar actualizaciones reactivas desde otros navegadores / sincronización
+    const handleTemplatesUpdated = (e: any) => {
+      if (!isUserEditingRef.current && e.detail?.templates) {
+        setTemplates(e.detail.templates)
+      }
+    }
+    window.addEventListener('publication-templates-updated', handleTemplatesUpdated)
+    return () => {
+      window.removeEventListener('publication-templates-updated', handleTemplatesUpdated)
     }
   }, [])
 
@@ -1871,6 +1773,12 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                               ))}
                             </select>
                             <ChevronDown size={14} className="absolute right-2.5 top-2.5 text-[#FACC15] pointer-events-none" />
+                          </div>
+
+                          {/* Indicador de Sincronización en la Nube */}
+                          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#141824] border border-[#252A3D] text-[11px] text-[#A0A5BD]" title="Plantillas sincronizadas en la nube para todos los vendedores">
+                            <Cloud size={13} className="text-emerald-400" />
+                            <span className="font-semibold text-xs">En la nube</span>
                           </div>
 
                           {/* Borrar Plantilla */}
