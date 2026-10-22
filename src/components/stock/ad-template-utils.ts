@@ -199,14 +199,25 @@ export interface AdPublicidadTemplate {
 
 export const DEFAULT_PUBLICIDADES: AdPublicidadTemplate[] = [
   {
+    id: 'universal-flyer-okm',
+    name: 'Plantilla Oficial Okmmotors (Universal Stock)',
+    model: 'ALL',
+    brand: 'ALL',
+    imageUrl: '/templates/plantilla_universal_clean.png',
+    isDefault: true,
+    only0km: false,
+    description: 'Plantilla publicitaria universal oficial Okmmotors con logo, cinta de financiación, precio contado final y cuotas aplicable a cualquier auto del stock.',
+    createdAt: 1740000000000
+  },
+  {
     id: 'amarok-official-flyer',
-    name: 'Publicidad Oficial Amarok 0KM',
+    name: 'Publicidad Clásica 4 Cuotas (Amarok 0KM)',
     model: 'Amarok',
     brand: 'Volkswagen',
     imageUrl: '/templates/plantilla_publicidad_okm.png?v=6',
-    isDefault: true,
+    isDefault: false,
     only0km: true,
-    description: 'Plantilla publicitaria oficial para Volkswagen Amarok 0KM (todas las versiones: V6, Comfortline, Highline, Trendline)',
+    description: 'Plantilla publicitaria clásica con 4 planes de cuotas.',
     createdAt: 1740000000000
   }
 ]
@@ -226,6 +237,7 @@ export function isVehicle0km(v: Vehicle | null | undefined): boolean {
 export function isVehicleMatchingModel(vehicle: Vehicle | null | undefined, targetModel: string): boolean {
   if (!vehicle || !targetModel) return false
   const t = targetModel.trim().toLowerCase()
+  if (t === 'all' || t === '*') return true
   const vModel = (vehicle.Modelo || '').trim().toLowerCase()
   const vVersion = (vehicle.Version || '').trim().toLowerCase()
 
@@ -238,15 +250,18 @@ export function isVehicleMatchingModel(vehicle: Vehicle | null | undefined, targ
 
 export function isVehicleMatchingPublicidad(vehicle: Vehicle | null | undefined, pub: AdPublicidadTemplate): boolean {
   if (!vehicle || !pub) return false
+  // Las plantillas universales o por defecto se aplican a TODOS los autos del stock
+  if (pub.model === 'ALL' || pub.brand === 'ALL' || pub.isDefault) {
+    return true
+  }
 
   // 1. Model check: must match the vehicle model
   if (!isVehicleMatchingModel(vehicle, pub.model)) {
     return false
   }
 
-  // 2. 0km check: if only0km is specified or if it's the official Amarok flyer
-  const isOfficialAmarok = pub.id === 'amarok-official-flyer' || (pub.model.trim().toLowerCase() === 'amarok' && pub.isDefault)
-  if (pub.only0km || isOfficialAmarok) {
+  // 2. 0km check: if only0km is specified
+  if (pub.only0km) {
     if (!isVehicle0km(vehicle)) {
       return false
     }
@@ -264,12 +279,15 @@ export function getSavedPublicidades(): AdPublicidadTemplate[] {
       if (Array.isArray(parsed) && parsed.length > 0) {
         const mapped = parsed.map((p: AdPublicidadTemplate) => {
           if (p.id === 'amarok-official-flyer' || (p.model?.toLowerCase() === 'amarok' && p.isDefault)) {
-            return { ...p, only0km: true, name: 'Publicidad Oficial Amarok 0KM' }
+            return { ...p, isDefault: false, only0km: true, name: 'Publicidad Oficial Amarok 0KM' }
           }
           return p
         })
-        const hasAmarok = mapped.some(p => p.id === 'amarok-official-flyer' || p.model?.toLowerCase() === 'amarok')
-        return hasAmarok ? mapped : [DEFAULT_PUBLICIDADES[0], ...mapped]
+        const hasUniversal = mapped.some(p => p.id === 'universal-flyer-okm' || p.model === 'ALL' || p.isDefault)
+        if (!hasUniversal) {
+          return [DEFAULT_PUBLICIDADES[0], ...mapped]
+        }
+        return mapped
       }
     }
   } catch (e) {

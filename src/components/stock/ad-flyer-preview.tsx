@@ -35,7 +35,7 @@ interface Props {
   onlyPreview?: boolean
 }
 
-const DEFAULT_TEMPLATE_IMAGE = '/templates/plantilla_publicidad_okm.png?v=6'
+const DEFAULT_TEMPLATE_IMAGE = '/templates/plantilla_universal_clean.png'
 
 interface TemplateFields {
   // Title box (media_1790630237346.png)
@@ -68,21 +68,21 @@ interface TemplateFields {
 }
 
 const DEFAULT_FIELDS: TemplateFields = {
-  title: 'VOLKSWAGEN AMAROK',
-  subtitle: 'COMFORTLINE AT 4X2',
+  title: 'VOLKSWAGEN TAOS',
+  subtitle: 'HIGHLINE 1.4 TSI AT / 0KM 2026',
   bannerText: 'ENTREGA INMEDIATA | FINANCIACION TASA 0%',
-  card1Price: '$23.200.000',
-  card1Sub: '+ 24 Cuotas de',
-  card1Extra: '$420.000',
-  card2Price: '$18.300.000',
-  card2Sub: '+ 18 Cuotas de',
-  card2Extra: '$720.000',
-  card3Price: '$17.500.000',
-  card3Sub: '+ 12 Cuotas de',
-  card3Extra: '$3.050.000',
+  card1Price: '$58.500.000',
+  card1Sub: 'FINALES',
+  card1Extra: '',
+  card2Price: '$13.500.000',
+  card2Sub: 'en 18 cuotas de $750.000',
+  card2Extra: '',
+  card3Price: '',
+  card3Sub: '',
+  card3Extra: '',
   card4Title: 'OFERTA CONTADO',
   card4Sub: '',
-  card4Price: '$53.800.000',
+  card4Price: '$58.500.000',
   card4Extra: ''
 }
 
@@ -96,65 +96,47 @@ function buildFlyerFields(vehicle?: Vehicle | null): TemplateFields {
   if (!vehicle) return DEFAULT_FIELDS
 
   const brand = (vehicle.Marca || 'VOLKSWAGEN').toUpperCase()
-  const model = (vehicle.Modelo || 'AMAROK').toUpperCase()
-  const ver = (vehicle.Version || 'COMFORTLINE AT 4X2').toUpperCase()
-  const anio = vehicle.Año ? `${vehicle.Año}` : ''
-  const subtitle = anio && !ver.includes(anio) ? `${ver} (${anio})` : ver
+  const model = (vehicle.Modelo || 'TAOS').toUpperCase()
+  const ver = (vehicle.Version || '').toUpperCase()
+  const is0km = vehicle.is_okm_table === true || Number(vehicle.Km) === 0 || (vehicle.Tipo_Vehiculo || '').toLowerCase().includes('0km')
+  const anio = vehicle.Año ? `${vehicle.Año}` : (is0km ? '2026' : '')
+  const estadoKm = is0km ? `0KM ${anio}`.trim() : `${(vehicle.Km ?? 0).toLocaleString('es-AR')} KM ${anio}`.trim()
+  const subtitle = ver ? (estadoKm ? `${ver} / ${estadoKm}` : ver) : estadoKm
 
-  const rawPrice = vehicle.Precio_Venta ?? 53800000
-  const pVenta = typeof rawPrice === 'number' && rawPrice > 0 ? rawPrice : 53800000
+  const rawPrice = vehicle.Precio_Venta ?? 58500000
+  const pVenta = typeof rawPrice === 'number' && rawPrice > 0 ? rawPrice : 58500000
 
-  // Si existe circular para este modelo/versión 0KM, usar las cuotas exactas de la circular
+  // Consultar circular del vehículo si existe
   const { circular } = vehicle ? getCircularForVehicle(vehicle) : { circular: null }
   const validRows = circular?.rows?.filter(r => r.maxFinanciar > 0 && r.cantCuotas > 0) || []
 
-  let ant24 = Math.round((pVenta * 0.7) / 100000) * 100000
-  let cuota24 = Math.round(((pVenta - ant24) / 24) / 10000) * 10000 || 420000
-  let label24 = '+ 24 Cuotas de'
+  // Por defecto: Plan de 18 cuotas o cálculo inteligente proporcional
+  let maxFinanciar = Math.round((pVenta * 0.5) / 100000) * 100000 || 13500000
+  let cantCuotas = 18
+  let costoCuota = Math.round((maxFinanciar / 18) / 10000) * 10000 || 750000
 
-  let ant18 = Math.round((pVenta * 0.55) / 100000) * 100000
-  let cuota18 = Math.round(((pVenta - ant18) / 18) / 10000) * 10000 || 720000
-  let label18 = '+ 18 Cuotas de'
-
-  let ant12 = Math.round((pVenta * 0.35) / 100000) * 100000
-  let cuota12 = Math.round(((pVenta - ant12) / 12) / 10000) * 10000 || 3050000
-  let label12 = '+ 12 Cuotas de'
-
-  if (validRows.length >= 3) {
-    const r1 = validRows[2] || validRows[validRows.length - 1]
-    ant24 = calculateEntrega(pVenta, r1.maxFinanciar)
-    cuota24 = r1.costoCuota
-    label24 = `+ ${r1.cantCuotas} Cuotas de`
-
-    const r2 = validRows[1] || validRows[0]
-    ant18 = calculateEntrega(pVenta, r2.maxFinanciar)
-    cuota18 = r2.costoCuota
-    label18 = `+ ${r2.cantCuotas} Cuotas de`
-
-    const r3 = validRows[0]
-    ant12 = calculateEntrega(pVenta, r3.maxFinanciar)
-    cuota12 = r3.costoCuota
-    label12 = `+ ${r3.cantCuotas} Cuotas de`
-  } else if (validRows.length > 0) {
-    const r = validRows[0]
-    ant18 = calculateEntrega(pVenta, r.maxFinanciar)
-    cuota18 = r.costoCuota
-    label18 = `+ ${r.cantCuotas} Cuotas de`
+  if (validRows.length > 0) {
+    const row18 = validRows.find(r => r.cantCuotas === 18) || validRows[Math.min(1, validRows.length - 1)]
+    if (row18) {
+      maxFinanciar = row18.maxFinanciar
+      cantCuotas = row18.cantCuotas
+      costoCuota = row18.costoCuota
+    }
   }
 
   return {
     title: `${brand} ${model}`,
     subtitle,
     bannerText: 'ENTREGA INMEDIATA | FINANCIACION TASA 0%',
-    card1Price: formatFlyerPrice(ant24),
-    card1Sub: label24,
-    card1Extra: formatFlyerPrice(cuota24),
-    card2Price: formatFlyerPrice(ant18),
-    card2Sub: label18,
-    card2Extra: formatFlyerPrice(cuota18),
-    card3Price: formatFlyerPrice(ant12),
-    card3Sub: label12,
-    card3Extra: formatFlyerPrice(cuota12),
+    card1Price: formatFlyerPrice(pVenta),
+    card1Sub: 'FINALES',
+    card1Extra: '',
+    card2Price: formatFlyerPrice(maxFinanciar),
+    card2Sub: `en ${cantCuotas} cuotas de ${formatFlyerPrice(costoCuota)}`,
+    card2Extra: '',
+    card3Price: '',
+    card3Sub: '',
+    card3Extra: '',
     card4Title: 'OFERTA CONTADO',
     card4Sub: '',
     card4Price: formatFlyerPrice(pVenta),
@@ -271,6 +253,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
   const renderFlyerContent = (
     ctx: CanvasRenderingContext2D,
     baseImg: HTMLImageElement,
+    carImg: HTMLImageElement | null,
     ox: number,
     oy: number,
     w: number,
@@ -281,253 +264,316 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     const sx = w / refW
     const sy = h / refH
 
-    // 1. Draw base template image
+    // 0. Si hay foto del vehículo, dibujarla de fondo con cover exacto
+    if (carImg && carImg.naturalWidth > 0) {
+      ctx.save()
+      const imgW = carImg.naturalWidth
+      const imgH = carImg.naturalHeight
+      const renderRatio = w / h
+      const imgRatio = imgW / imgH
+      let sWidth = imgW
+      let sHeight = imgH
+      let sxCrop = 0
+      let syCrop = 0
+
+      if (imgRatio > renderRatio) {
+        sWidth = Math.round(imgH * renderRatio)
+        sxCrop = Math.round((imgW - sWidth) / 2)
+      } else {
+        sHeight = Math.round(imgW / renderRatio)
+        syCrop = Math.round((imgH - sHeight) / 2)
+      }
+
+      ctx.drawImage(carImg, sxCrop, syCrop, sWidth, sHeight, ox, oy, w, h)
+      ctx.restore()
+    }
+
+    // 1. Dibujar el overlay de la plantilla universal
     ctx.drawImage(baseImg, ox, oy, w, h)
 
-    // 2. Title Box (Canonical x: 28..543, y: 195..289, w: 515, h: 94)
+    // 2. Title Box (Canonical x: 28..543, y: 152..258, w: 515, h: 106, rx: 12)
     const titleLeft = ox + 28 * sx
-    const titleTop = oy + 195 * sy
+    const titleTop = oy + 152 * sy
     const titleWidth = 515 * sx
-    const titleHeight = 94 * sy
+    const titleHeight = 106 * sy
 
+    ctx.save()
     const titleGrad = ctx.createLinearGradient(0, titleTop, 0, titleTop + titleHeight)
-    titleGrad.addColorStop(0, '#091224')
-    titleGrad.addColorStop(1, '#0D1B36')
+    titleGrad.addColorStop(0, '#0B172C')
+    titleGrad.addColorStop(1, '#070F1D')
     ctx.fillStyle = titleGrad
-    ctx.fillRect(titleLeft, titleTop, titleWidth, titleHeight)
+    ctx.beginPath()
+    ctx.roundRect(titleLeft, titleTop, titleWidth, titleHeight, 12 * sy)
+    ctx.fill()
+    ctx.lineWidth = Math.max(1, Math.round(1.2 * sy))
+    ctx.strokeStyle = '#1E293B'
+    ctx.stroke()
 
     ctx.fillStyle = '#FFFFFF'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.font = `900 ${Math.round(24 * sy)}px Montserrat, Inter, system-ui, sans-serif`
-    ctx.fillText(fields.title.trim().toUpperCase(), ox + w / 2, titleTop + titleHeight * 0.38)
+    ctx.font = `900 ${Math.round(23 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+    ctx.fillText(fields.title.trim().toUpperCase(), ox + w / 2, titleTop + titleHeight * 0.40)
 
-    ctx.fillStyle = '#899AB0'
-    ctx.font = `700 ${Math.round(14 * sy)}px Montserrat, Inter, system-ui, sans-serif`
-    ctx.fillText(fields.subtitle.trim().toUpperCase(), ox + w / 2, titleTop + titleHeight * 0.75)
+    ctx.fillStyle = '#8EA2B9'
+    ctx.font = `700 ${Math.round(13 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+    ctx.fillText(fields.subtitle.trim().toUpperCase(), ox + w / 2, titleTop + titleHeight * 0.74)
+    ctx.restore()
 
-    // 3. Banner Ribbon (Canonical x: 24..547, y: 572..619, w: 523, h: 47)
+    // 3. Banner Ribbon (Canonical x: 24..547, y: 569..615, w: 523, h: 46, rx: 23)
     const bLeft = ox + 24 * sx
-    const bTop = oy + 572 * sy
+    const bTop = oy + 569 * sy
     const bW = 523 * sx
-    const bH = 47 * sy
+    const bH = 46 * sy
 
+    ctx.save()
     const bGrad = ctx.createLinearGradient(0, bTop, 0, bTop + bH)
-    bGrad.addColorStop(0, '#E2E5EE')
-    bGrad.addColorStop(1, '#CCD0DB')
+    bGrad.addColorStop(0, '#FFFFFF')
+    bGrad.addColorStop(1, '#E5E7EB')
     ctx.fillStyle = bGrad
     ctx.beginPath()
-    ctx.roundRect(bLeft, bTop, bW, bH, 14 * sy)
+    ctx.roundRect(bLeft, bTop, bW, bH, 23 * sy)
     ctx.fill()
     ctx.lineWidth = Math.max(1, Math.round(1.2 * sy))
     ctx.strokeStyle = '#FFFFFF'
     ctx.stroke()
 
-    ctx.fillStyle = '#1E222D'
+    ctx.fillStyle = '#0F172A'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.font = `800 ${Math.round(17 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+    ctx.font = `900 ${Math.round(15 * sy)}px Montserrat, Inter, system-ui, sans-serif`
     ctx.fillText(fields.bannerText.trim().toUpperCase(), ox + w / 2, bTop + bH / 2)
+    ctx.restore()
 
-    // 4. Cards area mask (Canonical x: 5..566, y: 620..868)
-    const maskGrad = ctx.createLinearGradient(0, oy + 620 * sy, 0, oy + 870 * sy)
-    maskGrad.addColorStop(0, '#9396A9')
-    maskGrad.addColorStop(0.5, '#A7A6B6')
-    maskGrad.addColorStop(1, '#BAB9C7')
-    ctx.fillStyle = maskGrad
-    ctx.fillRect(ox + 5 * sx, oy + 620 * sy, 561 * sx, 248 * sy)
+    // 4. Tarjetas promocionales (2 tarjetas full width o clásico 2x2)
+    const isTwoCards = !fields.card3Price
 
-    // Helper to draw each promotional card
-    const drawCard = (
-      cx: number,
-      cy: number,
-      cw: number,
-      ch: number,
-      line1: string,
-      line2: string,
-      line3: string,
-      isContado: boolean
-    ) => {
-      ctx.save()
-      const cardGrad = ctx.createLinearGradient(cx, cy, cx, cy + ch)
-      cardGrad.addColorStop(0, '#FAFBFD')
-      cardGrad.addColorStop(1, '#E2E6EE')
+    if (isTwoCards) {
+      const drawFullWidthCard = (cy: number, ch: number, price: string, sub: string) => {
+        const cx = ox + 15 * sx
+        const cw = 541 * sx
+        ctx.save()
 
-      ctx.beginPath()
-      ctx.roundRect(cx, cy, cw, ch, 8 * sy)
-      ctx.fillStyle = cardGrad
-      ctx.fill()
-      ctx.lineWidth = Math.max(1, Math.round(1.2 * sy))
-      ctx.strokeStyle = '#FFFFFF'
-      ctx.stroke()
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.25)'
+        ctx.shadowBlur = 12 * sy
+        ctx.shadowOffsetY = 4 * sy
 
-      // Left Orange Stripe
-      const stripeW = Math.max(4, Math.round(6 * sx))
-      ctx.fillStyle = '#C85A32'
-      ctx.beginPath()
-      ctx.roundRect(cx, cy, stripeW, ch, [8 * sy, 0, 0, 8 * sy])
-      ctx.fill()
+        const cardGrad = ctx.createLinearGradient(cx, cy, cx, cy + ch)
+        cardGrad.addColorStop(0, '#FFFFFF')
+        cardGrad.addColorStop(1, '#F4F5F8')
 
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      const centerX = cx + (cw + stripeW) / 2
+        ctx.beginPath()
+        ctx.roundRect(cx, cy, cw, ch, 12 * sy)
+        ctx.fillStyle = cardGrad
+        ctx.fill()
+        ctx.shadowColor = 'transparent'
 
-      if (isContado) {
-        // Line 1: OFERTA CONTADO
-        ctx.fillStyle = '#1E222D'
-        ctx.font = `800 ${Math.round(18 * sy)}px Montserrat, Inter, system-ui, sans-serif`
-        ctx.fillText(line1.trim().toUpperCase(), centerX, cy + ch * 0.35)
+        ctx.lineWidth = Math.max(1, Math.round(1.2 * sy))
+        ctx.strokeStyle = '#FFFFFF'
+        ctx.stroke()
 
-        // Line 2: Precio Contado
-        ctx.fillStyle = '#B85D38'
-        ctx.font = `800 ${Math.round(24 * sy)}px Montserrat, Inter, system-ui, sans-serif`
-        ctx.fillText((line3 || line2 || fields.card4Price).trim(), centerX, cy + ch * 0.70)
-      } else {
-        // Line 1: Anticipo
-        ctx.fillStyle = '#B85D38'
-        ctx.font = `800 ${Math.round(22 * sy)}px Montserrat, Inter, system-ui, sans-serif`
-        ctx.fillText(line1.trim(), centerX, cy + ch * 0.24)
+        // Franja naranja izquierda
+        const stripeW = Math.max(8, Math.round(12 * sx))
+        ctx.fillStyle = '#C2410C'
+        ctx.beginPath()
+        ctx.roundRect(cx, cy, stripeW, ch, [12 * sy, 0, 0, 12 * sy])
+        ctx.fill()
 
-        // Line 2: Cuotas
-        ctx.fillStyle = '#6B7280'
-        ctx.font = `800 ${Math.round(15 * sy)}px Montserrat, Inter, system-ui, sans-serif`
-        ctx.fillText(line2.trim(), centerX, cy + ch * 0.52)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        const centerX = cx + (cw + stripeW) / 2
 
-        // Line 3: Precio cuota
-        ctx.fillStyle = '#0B0D13'
-        ctx.font = `800 ${Math.round(22 * sy)}px Montserrat, Inter, system-ui, sans-serif`
-        ctx.fillText(line3.trim(), centerX, cy + ch * 0.80)
+        ctx.fillStyle = '#C2410C'
+        ctx.font = `900 ${Math.round(38 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+        ctx.fillText(price.trim(), centerX, cy + ch * 0.38)
+
+        ctx.fillStyle = '#0F172A'
+        ctx.font = `900 ${Math.round(23 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+        ctx.fillText(sub.trim(), centerX, cy + ch * 0.76)
+
+        ctx.restore()
       }
-      ctx.restore()
+
+      // Card 1 (Precio Final)
+      drawFullWidthCard(oy + 626 * sy, 126 * sy, fields.card1Price, fields.card1Sub)
+
+      // Card 2 (Financiación en Cuotas)
+      drawFullWidthCard(oy + 766 * sy, 126 * sy, fields.card2Price, fields.card2Sub)
+    } else {
+      // 4 tarjetas cuadrícula clásica 2x2
+      const drawCard = (
+        cx: number,
+        cy: number,
+        cw: number,
+        ch: number,
+        line1: string,
+        line2: string,
+        line3: string,
+        isContado: boolean
+      ) => {
+        ctx.save()
+        const cardGrad = ctx.createLinearGradient(cx, cy, cx, cy + ch)
+        cardGrad.addColorStop(0, '#FAFBFD')
+        cardGrad.addColorStop(1, '#E2E6EE')
+
+        ctx.beginPath()
+        ctx.roundRect(cx, cy, cw, ch, 8 * sy)
+        ctx.fillStyle = cardGrad
+        ctx.fill()
+        ctx.lineWidth = Math.max(1, Math.round(1.2 * sy))
+        ctx.strokeStyle = '#FFFFFF'
+        ctx.stroke()
+
+        const stripeW = Math.max(4, Math.round(6 * sx))
+        ctx.fillStyle = '#C85A32'
+        ctx.beginPath()
+        ctx.roundRect(cx, cy, stripeW, ch, [8 * sy, 0, 0, 8 * sy])
+        ctx.fill()
+
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        const centerX = cx + (cw + stripeW) / 2
+
+        if (isContado) {
+          ctx.fillStyle = '#1E222D'
+          ctx.font = `800 ${Math.round(18 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+          ctx.fillText(line1.trim().toUpperCase(), centerX, cy + ch * 0.35)
+
+          ctx.fillStyle = '#B85D38'
+          ctx.font = `800 ${Math.round(24 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+          ctx.fillText((line3 || line2 || fields.card4Price).trim(), centerX, cy + ch * 0.70)
+        } else {
+          ctx.fillStyle = '#B85D38'
+          ctx.font = `800 ${Math.round(22 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+          ctx.fillText(line1.trim(), centerX, cy + ch * 0.24)
+
+          ctx.fillStyle = '#6B7280'
+          ctx.font = `800 ${Math.round(15 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+          ctx.fillText(line2.trim(), centerX, cy + ch * 0.52)
+
+          ctx.fillStyle = '#0B0D13'
+          ctx.font = `800 ${Math.round(22 * sy)}px Montserrat, Inter, system-ui, sans-serif`
+          ctx.fillText(line3.trim(), centerX, cy + ch * 0.80)
+        }
+        ctx.restore()
+      }
+
+      const col1X = ox + 16 * sx
+      const col2X = ox + 291 * sx
+      const cardW = 264 * sx
+      const cardH = 114 * sy
+      const row1Y = oy + 631 * sy
+      const row2Y = oy + 757 * sy
+
+      drawCard(col1X, row1Y, cardW, cardH, fields.card1Price, fields.card1Sub, fields.card1Extra, false)
+      drawCard(col2X, row1Y, cardW, cardH, fields.card2Price, fields.card2Sub, fields.card2Extra, false)
+      drawCard(col1X, row2Y, cardW, cardH, fields.card3Price, fields.card3Sub, fields.card3Extra, false)
+      drawCard(col2X, row2Y, cardW, cardH, fields.card4Title, '', fields.card4Price, true)
     }
-
-    const col1X = ox + 16 * sx
-    const col2X = ox + 291 * sx
-    const cardW = 264 * sx
-    const cardH = 114 * sy
-    const row1Y = oy + 631 * sy
-    const row2Y = oy + 757 * sy
-
-    // Card 1 (Top-Left: 24 Cuotas)
-    drawCard(col1X, row1Y, cardW, cardH, fields.card1Price, fields.card1Sub, fields.card1Extra, false)
-
-    // Card 2 (Top-Right: 18 Cuotas)
-    drawCard(col2X, row1Y, cardW, cardH, fields.card2Price, fields.card2Sub, fields.card2Extra, false)
-
-    // Card 3 (Bottom-Left: 12 Cuotas)
-    drawCard(col1X, row2Y, cardW, cardH, fields.card3Price, fields.card3Sub, fields.card3Extra, false)
-
-    // Card 4 (Bottom-Right: Oferta Contado)
-    drawCard(col2X, row2Y, cardW, cardH, fields.card4Title, '', fields.card4Price, true)
   }
 
   // Ultra HD canvas rendering for Download, Copy and Auto-Publishing (1080x1920 or 1200x1200)
   const generateCompositeBlob = async (targetFormat?: '9:16' | '1:1'): Promise<Blob> => {
     const chosenFormat = targetFormat || aspectRatio
+    const carPhotoUrl = vehicle?.FOTO_PORTADA || (vehicle as any)?.Fotos?.[0] || (vehicle?.FOTOS_EXTRA ? vehicle.FOTOS_EXTRA.split(',')[0]?.trim() : null) || null
+
+    const loadImage = (src: string): Promise<HTMLImageElement | null> => {
+      return new Promise((resolve) => {
+        if (!src) return resolve(null)
+        const i = new Image()
+        i.crossOrigin = 'anonymous'
+        i.onload = () => resolve(i)
+        i.onerror = () => resolve(null)
+        i.src = src
+        if (i.complete && i.naturalWidth > 0) resolve(i)
+      })
+    }
+
+    const [img, carImg] = await Promise.all([
+      loadImage(templateImage),
+      carPhotoUrl ? loadImage(carPhotoUrl) : Promise.resolve(null)
+    ])
+
+    if (!img) throw new Error('No se pudo cargar la imagen de la plantilla')
+
     return new Promise((resolve, reject) => {
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
+      try {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d', { willReadFrequently: false })
+        if (!ctx) return reject(new Error('Canvas context not available'))
 
-      let finished = false
-      const onImageLoaded = () => {
-        if (finished) return
-        finished = true
-        try {
-          const canvas = document.createElement('canvas')
-          const ctx = canvas.getContext('2d', { willReadFrequently: false })
-          if (!ctx) return reject(new Error('Canvas context not available'))
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
 
-          ctx.imageSmoothingEnabled = true
-          ctx.imageSmoothingQuality = 'high'
+        const refW = 571
+        const refH = 1024
 
-          const refW = 571
-          const refH = 1024
+        if (chosenFormat === '1:1') {
+          // ULTRA HD 1:1 SQUARE FORMAT (1200 x 1200 px)
+          const outW = 1200
+          const outH = 1200
+          canvas.width = outW
+          canvas.height = outH
 
-          if (chosenFormat === '1:1') {
-            // ========================================================
-            // ULTRA HD 1:1 SQUARE FORMAT (1200 x 1200 px)
-            // For: Facebook Marketplace, Mercado Libre, Instagram Feed, Facebook Feed
-            // Ensures the entire flyer is visible without ANY cropping!
-            // ========================================================
-            const outW = 1200
-            const outH = 1200
-            canvas.width = outW
-            canvas.height = outH
+          // 1. Ambient studio background
+          const bgGrad = ctx.createLinearGradient(0, 0, 0, outH)
+          bgGrad.addColorStop(0, '#060f1e')
+          bgGrad.addColorStop(0.22, '#0a172b')
+          bgGrad.addColorStop(0.48, '#1b2d48')
+          bgGrad.addColorStop(0.65, '#50647a')
+          bgGrad.addColorStop(0.85, '#8598a8')
+          bgGrad.addColorStop(1, '#b0b8c2')
+          ctx.fillStyle = bgGrad
+          ctx.fillRect(0, 0, outW, outH)
 
-            // 1. Draw ambient studio background
-            const bgGrad = ctx.createLinearGradient(0, 0, 0, outH)
-            bgGrad.addColorStop(0, '#060f1e')
-            bgGrad.addColorStop(0.22, '#0a172b')
-            bgGrad.addColorStop(0.48, '#1b2d48')
-            bgGrad.addColorStop(0.65, '#50647a')
-            bgGrad.addColorStop(0.85, '#8598a8')
-            bgGrad.addColorStop(1, '#b0b8c2')
-            ctx.fillStyle = bgGrad
-            ctx.fillRect(0, 0, outW, outH)
+          // 2. Blurred ambient wings
+          const ambientSource = carImg || img
+          ctx.save()
+          ctx.filter = 'blur(30px) brightness(0.65)'
+          ctx.drawImage(ambientSource, -100, -50, outW + 200, outH + 100)
+          ctx.restore()
 
-            // 2. Draw blurred ambient wings for realistic studio atmosphere
-            ctx.save()
-            ctx.filter = 'blur(30px) brightness(0.65)'
-            ctx.drawImage(img, -100, -50, outW + 200, outH + 100)
-            ctx.restore()
+          const sideVignette = ctx.createLinearGradient(0, 0, outW, 0)
+          sideVignette.addColorStop(0, 'rgba(4, 10, 20, 0.88)')
+          sideVignette.addColorStop(0.22, 'rgba(4, 10, 20, 0.45)')
+          sideVignette.addColorStop(0.5, 'rgba(4, 10, 20, 0)')
+          sideVignette.addColorStop(0.78, 'rgba(4, 10, 20, 0.45)')
+          sideVignette.addColorStop(1, 'rgba(4, 10, 20, 0.88)')
+          ctx.fillStyle = sideVignette
+          ctx.fillRect(0, 0, outW, outH)
 
-            // Subtle dark vignette on ambient wings
-            const sideVignette = ctx.createLinearGradient(0, 0, outW, 0)
-            sideVignette.addColorStop(0, 'rgba(4, 10, 20, 0.88)')
-            sideVignette.addColorStop(0.22, 'rgba(4, 10, 20, 0.45)')
-            sideVignette.addColorStop(0.5, 'rgba(4, 10, 20, 0)')
-            sideVignette.addColorStop(0.78, 'rgba(4, 10, 20, 0.45)')
-            sideVignette.addColorStop(1, 'rgba(4, 10, 20, 0.88)')
-            ctx.fillStyle = sideVignette
-            ctx.fillRect(0, 0, outW, outH)
+          // 3. Central Flyer dimensions
+          const flyerH = 1200
+          const flyerW = Math.round(flyerH * (refW / refH)) // ~669 px
+          const offsetX = Math.round((outW - flyerW) / 2) // ~265 px
+          const offsetY = 0
 
+          ctx.save()
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.65)'
+          ctx.shadowBlur = 45
+          ctx.shadowOffsetX = 0
+          ctx.shadowOffsetY = 0
+          ctx.fillStyle = '#08172c'
+          ctx.fillRect(offsetX, offsetY, flyerW, flyerH)
+          ctx.restore()
 
-            // 3. Central Flyer dimensions
-            const flyerH = 1200
-            const flyerW = Math.round(flyerH * (refW / refH)) // ~669 px
-            const offsetX = Math.round((outW - flyerW) / 2) // ~265 px
-            const offsetY = 0
+          renderFlyerContent(ctx, img, carImg, offsetX, offsetY, flyerW, flyerH, refW, refH)
+        } else {
+          // ULTRA HD 9:16 VERTICAL FORMAT (1080 x 1920 px)
+          const outW = 1080
+          const outH = 1920
+          canvas.width = outW
+          canvas.height = outH
 
-            // Central flyer subtle drop shadow
-            ctx.save()
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.65)'
-            ctx.shadowBlur = 45
-            ctx.shadowOffsetX = 0
-            ctx.shadowOffsetY = 0
-            ctx.fillStyle = '#08172c'
-            ctx.fillRect(offsetX, offsetY, flyerW, flyerH)
-            ctx.restore()
-
-            // Render flyer elements inside (offsetX, offsetY, flyerW, flyerH)
-            renderFlyerContent(ctx, img, offsetX, offsetY, flyerW, flyerH, refW, refH)
-          } else {
-            // ========================================================
-            // ULTRA HD 9:16 VERTICAL FORMAT (1080 x 1920 px)
-            // For: Instagram Story, TikTok, WhatsApp Status, Reels
-            // Exact native Full HD / 2K mobile aspect ratio
-            // ========================================================
-            const outW = 1080
-            const outH = 1920
-            canvas.width = outW
-            canvas.height = outH
-
-            renderFlyerContent(ctx, img, 0, 0, outW, outH, refW, refH)
-          }
-
-          canvas.toBlob((blob) => {
-            if (blob) resolve(blob)
-            else reject(new Error('Failed to create blob'))
-          }, 'image/png')
-        } catch (err) {
-          reject(err)
+          renderFlyerContent(ctx, img, carImg, 0, 0, outW, outH, refW, refH)
         }
-      }
 
-      img.onload = onImageLoaded
-      img.onerror = () => reject(new Error('Failed to load image'))
-      img.src = templateImage
-      if (img.complete && img.naturalWidth > 0) {
-        onImageLoaded()
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob)
+          else reject(new Error('Failed to create blob'))
+        }, 'image/png')
+      } catch (err) {
+        reject(err)
       }
     })
   }
@@ -573,47 +619,49 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
   }
 
   const isCustom = templateImage !== DEFAULT_TEMPLATE_IMAGE
+  const carPhotoUrl = vehicle?.FOTO_PORTADA || (vehicle as any)?.Fotos?.[0] || (vehicle?.FOTOS_EXTRA ? vehicle.FOTOS_EXTRA.split(',')[0]?.trim() : null) || null
+  const isTwoCards = !fields.card3Price
 
   // Shared in-place editable inputs overlay for flyer (pixel-perfect in both 9:16 and 1:1)
   const renderOverlayInputs = () => (
     <>
       {/* 1. CAJA TÍTULO Y VERSIÓN */}
       <div
-        className="absolute z-10 flex flex-col items-center justify-center px-1.5 py-0.5 rounded-lg border border-transparent hover:border-[#60A5FA60] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
+        className="absolute z-10 flex flex-col items-center justify-center px-1.5 py-0.5 rounded-xl border border-transparent hover:border-[#60A5FA60] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all shadow-md"
         style={{
-          top: '19.0%',
+          top: '14.8%',
           left: '4.9%',
           width: '90.2%',
-          height: '9.2%',
-          background: 'linear-gradient(180deg, #091224 0%, #0D1B36 100%)'
+          height: '10.3%',
+          background: 'linear-gradient(180deg, #0B172C 0%, #070F1D 100%)'
         }}>
         <input
           type="text"
           value={fields.title}
           onChange={e => handleFieldChange('title', e.target.value)}
-          placeholder="VOLKSWAGEN AMAROK"
+          placeholder="VOLKSWAGEN TAOS"
           title="Hacé clic para escribir la Marca y Modelo"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-white/10 rounded text-white font-extrabold uppercase text-[12px] leading-tight tracking-wide font-sans cursor-text hover:bg-white/5 transition-colors p-0 m-0"
+          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-white/10 rounded text-white font-black uppercase text-[12px] sm:text-[13px] leading-tight tracking-wide font-sans cursor-text hover:bg-white/5 transition-colors p-0 m-0"
         />
         <input
           type="text"
           value={fields.subtitle}
           onChange={e => handleFieldChange('subtitle', e.target.value)}
-          placeholder="COMFORTLINE AT 4X2"
+          placeholder="HIGHLINE 1.4 TSI AT / 0KM 2026"
           title="Hacé clic para escribir la Versión y Año"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-white/10 rounded text-[#899AB0] font-bold uppercase text-[8.5px] leading-tight tracking-wider font-sans cursor-text hover:bg-white/5 transition-colors p-0 m-0 mt-0.5"
+          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-white/10 rounded text-[#8EA2B9] font-bold uppercase text-[8.5px] sm:text-[9.5px] leading-tight tracking-wider font-sans cursor-text hover:bg-white/5 transition-colors p-0 m-0 mt-0.5"
         />
       </div>
 
       {/* 2. CAJA CINTA CENTRAL */}
       <div
-        className="absolute z-10 flex items-center justify-center px-2 rounded-full border border-white/70 shadow-[0_1px_4px_rgba(0,0,0,0.12)] hover:border-[#60A5FA60] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
+        className="absolute z-10 flex items-center justify-center px-2 rounded-full border border-white/80 shadow-[0_2px_8px_rgba(0,0,0,0.18)] hover:border-[#60A5FA60] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
         style={{
-          top: '55.9%',
+          top: '55.6%',
           left: '4.2%',
           width: '91.6%',
-          height: '4.6%',
-          background: 'linear-gradient(180deg, #E2E5EE 0%, #CCD0DB 100%)'
+          height: '4.5%',
+          background: 'linear-gradient(180deg, #FFFFFF 0%, #E5E7EB 100%)'
         }}>
         <input
           type="text"
@@ -621,172 +669,216 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
           onChange={e => handleFieldChange('bannerText', e.target.value)}
           placeholder="ENTREGA INMEDIATA | FINANCIACION TASA 0%"
           title="Hacé clic para modificar el texto de la cinta"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/10 rounded-full text-[#1E222D] font-black uppercase text-[10.5px] tracking-tight leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/10 rounded-full text-[#0F172A] font-black uppercase text-[9.5px] sm:text-[10.5px] tracking-tight leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
         />
       </div>
 
-      {/* MÁSCARA DE FONDO: Elimina por completo los cuadros viejos */}
-      <div
-        className="absolute pointer-events-none z-[5]"
-        style={{
-          top: '60.5%',
-          left: '1.0%',
-          width: '98.0%',
-          height: '24.2%',
-          background: 'linear-gradient(180deg, #9396A9 0%, #A7A6B6 50%, #BAB9C7 100%)'
-        }}
-      />
+      {isTwoCards ? (
+        /* ======================================================== */
+        /* NUEVO DISEÑO UNIVERSAL: 2 TARJETAS APILADAS ANCHO COMPLETO */
+        /* ======================================================== */
+        <>
+          {/* TARJETA 1 - PRECIO FINAL */}
+          <div
+            className="absolute z-10 flex flex-col justify-center items-center text-center overflow-hidden pl-3 pr-2 py-0.5 rounded-xl border border-white/90 shadow-[0_4px_12px_rgba(0,0,0,0.22)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-2 focus-within:ring-[#60A5FA50] transition-all"
+            style={{
+              top: '61.1%',
+              left: '2.6%',
+              width: '94.8%',
+              height: '12.3%',
+              background: 'linear-gradient(180deg, #FFFFFF 0%, #F4F5F8 100%)'
+            }}>
+            <div className="absolute left-0 top-0 bottom-0 w-[5px] sm:w-[6px] bg-[#C2410C]" />
+            <input
+              type="text"
+              value={fields.card1Price}
+              onChange={e => handleFieldChange('card1Price', e.target.value)}
+              placeholder="$58.500.000"
+              title="Hacé clic para editar el precio contado final"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#C2410C] font-black text-[17px] sm:text-[19px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+            <input
+              type="text"
+              value={fields.card1Sub}
+              onChange={e => handleFieldChange('card1Sub', e.target.value)}
+              placeholder="FINALES"
+              title="Hacé clic para editar la leyenda (ej. FINALES)"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#1F2937] font-black uppercase text-[11px] sm:text-[12px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0 mt-0.5"
+            />
+          </div>
 
-      {/* 3. CAJA TARJETA 1 - 24 CUOTAS */}
-      <div
-        className="absolute z-10 flex flex-col justify-between items-center text-center overflow-hidden pl-[5px] pr-[2px] py-1 rounded-lg border border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.18)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
-        style={{
-          top: '61.2%',
-          left: '1.8%',
-          width: '47.4%',
-          height: '11.5%',
-          background: 'linear-gradient(180deg, #FAFBFD 0%, #E3E7EF 100%)'
-        }}>
-        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C85A32]" />
-        <input
-          type="text"
-          value={fields.card1Price}
-          onChange={e => handleFieldChange('card1Price', e.target.value)}
-          onBlur={e => handleFieldChange('card1Price', e.target.value.trim())}
-          placeholder="$23.200.000"
-          title="Hacé clic para editar el anticipo"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#B85D38] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-        <input
-          type="text"
-          value={fields.card1Sub}
-          onChange={e => handleFieldChange('card1Sub', e.target.value)}
-          onBlur={e => handleFieldChange('card1Sub', e.target.value.trim())}
-          placeholder="+ 24 Cuotas de"
-          title="Hacé clic para editar las cuotas"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#6B7280] font-black text-[10.5px] leading-tight tracking-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-        <input
-          type="text"
-          value={fields.card1Extra}
-          onChange={e => handleFieldChange('card1Extra', e.target.value)}
-          onBlur={e => handleFieldChange('card1Extra', e.target.value.trim())}
-          placeholder="$420.000"
-          title="Hacé clic para editar el precio de la cuota"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#0B0D13] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-      </div>
+          {/* TARJETA 2 - FINANCIACIÓN EN CUOTAS */}
+          <div
+            className="absolute z-10 flex flex-col justify-center items-center text-center overflow-hidden pl-3 pr-2 py-0.5 rounded-xl border border-white/90 shadow-[0_4px_12px_rgba(0,0,0,0.22)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-2 focus-within:ring-[#60A5FA50] transition-all"
+            style={{
+              top: '74.8%',
+              left: '2.6%',
+              width: '94.8%',
+              height: '12.3%',
+              background: 'linear-gradient(180deg, #FFFFFF 0%, #F4F5F8 100%)'
+            }}>
+            <div className="absolute left-0 top-0 bottom-0 w-[5px] sm:w-[6px] bg-[#C2410C]" />
+            <input
+              type="text"
+              value={fields.card2Price}
+              onChange={e => handleFieldChange('card2Price', e.target.value)}
+              placeholder="$13.500.000"
+              title="Hacé clic para editar el anticipo a financiar"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#C2410C] font-black text-[17px] sm:text-[19px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+            <input
+              type="text"
+              value={fields.card2Sub}
+              onChange={e => handleFieldChange('card2Sub', e.target.value)}
+              placeholder="en 18 cuotas de $750.000"
+              title="Hacé clic para editar la cuota y plazo"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#0F172A] font-black text-[11px] sm:text-[12px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0 mt-0.5"
+            />
+          </div>
+        </>
+      ) : (
+        /* DISEÑO CLÁSICO: 4 TARJETAS 2x2 */
+        <>
+          <div
+            className="absolute pointer-events-none z-[5]"
+            style={{
+              top: '60.5%',
+              left: '1.0%',
+              width: '98.0%',
+              height: '24.2%',
+              background: 'linear-gradient(180deg, #9396A9 0%, #A7A6B6 50%, #BAB9C7 100%)'
+            }}
+          />
+          {/* Card 1 */}
+          <div
+            className="absolute z-10 flex flex-col justify-between items-center text-center overflow-hidden pl-[5px] pr-[2px] py-1 rounded-lg border border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.18)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
+            style={{
+              top: '61.2%',
+              left: '1.8%',
+              width: '47.4%',
+              height: '11.5%',
+              background: 'linear-gradient(180deg, #FAFBFD 0%, #E3E7EF 100%)'
+            }}>
+            <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C85A32]" />
+            <input
+              type="text"
+              value={fields.card1Price}
+              onChange={e => handleFieldChange('card1Price', e.target.value)}
+              placeholder="$23.200.000"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#B85D38] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+            <input
+              type="text"
+              value={fields.card1Sub}
+              onChange={e => handleFieldChange('card1Sub', e.target.value)}
+              placeholder="+ 24 Cuotas de"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#6B7280] font-black text-[10.5px] leading-tight tracking-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+            <input
+              type="text"
+              value={fields.card1Extra}
+              onChange={e => handleFieldChange('card1Extra', e.target.value)}
+              placeholder="$420.000"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#0B0D13] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+          </div>
 
-      {/* 4. CAJA TARJETA 2 - 18 CUOTAS */}
-      <div
-        className="absolute z-10 flex flex-col justify-between items-center text-center overflow-hidden pl-[5px] pr-[2px] py-1 rounded-lg border border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.18)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
-        style={{
-          top: '61.2%',
-          left: '50.8%',
-          width: '47.4%',
-          height: '11.5%',
-          background: 'linear-gradient(180deg, #FAFBFD 0%, #E3E7EF 100%)'
-        }}>
-        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C85A32]" />
-        <input
-          type="text"
-          value={fields.card2Price}
-          onChange={e => handleFieldChange('card2Price', e.target.value)}
-          onBlur={e => handleFieldChange('card2Price', e.target.value.trim())}
-          placeholder="$18.300.000"
-          title="Hacé clic para editar el anticipo"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#B85D38] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-        <input
-          type="text"
-          value={fields.card2Sub}
-          onChange={e => handleFieldChange('card2Sub', e.target.value)}
-          onBlur={e => handleFieldChange('card2Sub', e.target.value.trim())}
-          placeholder="+ 18 Cuotas de"
-          title="Hacé clic para editar las cuotas"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#6B7280] font-black text-[10.5px] leading-tight tracking-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-        <input
-          type="text"
-          value={fields.card2Extra}
-          onChange={e => handleFieldChange('card2Extra', e.target.value)}
-          onBlur={e => handleFieldChange('card2Extra', e.target.value.trim())}
-          placeholder="$720.000"
-          title="Hacé clic para editar el precio de la cuota"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#0B0D13] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-      </div>
+          {/* Card 2 */}
+          <div
+            className="absolute z-10 flex flex-col justify-between items-center text-center overflow-hidden pl-[5px] pr-[2px] py-1 rounded-lg border border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.18)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
+            style={{
+              top: '61.2%',
+              left: '50.8%',
+              width: '47.4%',
+              height: '11.5%',
+              background: 'linear-gradient(180deg, #FAFBFD 0%, #E3E7EF 100%)'
+            }}>
+            <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C85A32]" />
+            <input
+              type="text"
+              value={fields.card2Price}
+              onChange={e => handleFieldChange('card2Price', e.target.value)}
+              placeholder="$18.300.000"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#B85D38] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+            <input
+              type="text"
+              value={fields.card2Sub}
+              onChange={e => handleFieldChange('card2Sub', e.target.value)}
+              placeholder="+ 18 Cuotas de"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#6B7280] font-black text-[10.5px] leading-tight tracking-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+            <input
+              type="text"
+              value={fields.card2Extra}
+              onChange={e => handleFieldChange('card2Extra', e.target.value)}
+              placeholder="$720.000"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#0B0D13] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+          </div>
 
-      {/* 5. CAJA TARJETA 3 - 12 CUOTAS */}
-      <div
-        className="absolute z-10 flex flex-col justify-between items-center text-center overflow-hidden pl-[5px] pr-[2px] py-1 rounded-lg border border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.18)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
-        style={{
-          top: '73.2%',
-          left: '1.8%',
-          width: '47.4%',
-          height: '11.5%',
-          background: 'linear-gradient(180deg, #FAFBFD 0%, #E3E7EF 100%)'
-        }}>
-        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C85A32]" />
-        <input
-          type="text"
-          value={fields.card3Price}
-          onChange={e => handleFieldChange('card3Price', e.target.value)}
-          onBlur={e => handleFieldChange('card3Price', e.target.value.trim())}
-          placeholder="$17.500.000"
-          title="Hacé clic para editar el anticipo"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#B85D38] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-        <input
-          type="text"
-          value={fields.card3Sub}
-          onChange={e => handleFieldChange('card3Sub', e.target.value)}
-          onBlur={e => handleFieldChange('card3Sub', e.target.value.trim())}
-          placeholder="+ 12 Cuotas de"
-          title="Hacé clic para editar las cuotas"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#6B7280] font-black text-[10.5px] leading-tight tracking-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-        <input
-          type="text"
-          value={fields.card3Extra}
-          onChange={e => handleFieldChange('card3Extra', e.target.value)}
-          onBlur={e => handleFieldChange('card3Extra', e.target.value.trim())}
-          placeholder="$3.050.000"
-          title="Hacé clic para editar el precio de la cuota"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#0B0D13] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-      </div>
+          {/* Card 3 */}
+          <div
+            className="absolute z-10 flex flex-col justify-between items-center text-center overflow-hidden pl-[5px] pr-[2px] py-1 rounded-lg border border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.18)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
+            style={{
+              top: '73.2%',
+              left: '1.8%',
+              width: '47.4%',
+              height: '11.5%',
+              background: 'linear-gradient(180deg, #FAFBFD 0%, #E3E7EF 100%)'
+            }}>
+            <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C85A32]" />
+            <input
+              type="text"
+              value={fields.card3Price}
+              onChange={e => handleFieldChange('card3Price', e.target.value)}
+              placeholder="$17.500.000"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#B85D38] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+            <input
+              type="text"
+              value={fields.card3Sub}
+              onChange={e => handleFieldChange('card3Sub', e.target.value)}
+              placeholder="+ 12 Cuotas de"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#6B7280] font-black text-[10.5px] leading-tight tracking-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+            <input
+              type="text"
+              value={fields.card3Extra}
+              onChange={e => handleFieldChange('card3Extra', e.target.value)}
+              placeholder="$3.050.000"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#0B0D13] font-black text-[12.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+          </div>
 
-      {/* 6. CAJA TARJETA 4 - OFERTA DE CONTADO */}
-      <div
-        className="absolute z-10 flex flex-col justify-center items-center text-center gap-1.5 overflow-hidden pl-[5px] pr-[2px] py-1 rounded-lg border border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.18)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
-        style={{
-          top: '73.2%',
-          left: '50.8%',
-          width: '47.4%',
-          height: '11.5%',
-          background: 'linear-gradient(180deg, #FAFBFD 0%, #E3E7EF 100%)'
-        }}>
-        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C85A32]" />
-        <input
-          type="text"
-          value={fields.card4Title}
-          onChange={e => handleFieldChange('card4Title', e.target.value)}
-          onBlur={e => handleFieldChange('card4Title', e.target.value.trim())}
-          placeholder="OFERTA CONTADO"
-          title="Hacé clic para editar el título de oferta"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#0B0D13] font-black uppercase text-[11px] tracking-tight leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-        <input
-          type="text"
-          value={fields.card4Price}
-          onChange={e => handleFieldChange('card4Price', e.target.value)}
-          onBlur={e => handleFieldChange('card4Price', e.target.value.trim())}
-          placeholder="$53.800.000"
-          title="Hacé clic para editar el precio de contado"
-          className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#B85D38] font-black text-[13.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
-        />
-      </div>
+          {/* Card 4 */}
+          <div
+            className="absolute z-10 flex flex-col justify-center items-center text-center gap-1.5 overflow-hidden pl-[5px] pr-[2px] py-1 rounded-lg border border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.18)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
+            style={{
+              top: '73.2%',
+              left: '50.8%',
+              width: '47.4%',
+              height: '11.5%',
+              background: 'linear-gradient(180deg, #FAFBFD 0%, #E3E7EF 100%)'
+            }}>
+            <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#C85A32]" />
+            <input
+              type="text"
+              value={fields.card4Title}
+              onChange={e => handleFieldChange('card4Title', e.target.value)}
+              placeholder="OFERTA CONTADO"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#0B0D13] font-black uppercase text-[11px] tracking-tight leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+            <input
+              type="text"
+              value={fields.card4Price}
+              onChange={e => handleFieldChange('card4Price', e.target.value)}
+              placeholder="$53.800.000"
+              className="w-full text-center bg-transparent border-0 focus:outline-none focus:bg-black/5 rounded text-[#B85D38] font-black text-[13.5px] leading-tight font-sans cursor-text hover:bg-black/5 transition-colors p-0 m-0"
+            />
+          </div>
+        </>
+      )}
 
       {isCustom && (
         <span className="absolute top-2.5 right-2.5 text-[10px] font-black px-2 py-0.5 rounded-full bg-[#2563EB] text-white shadow-md border border-white/20">
@@ -811,7 +903,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
             
             {/* Blurred ambient background filling 1:1 square */}
             <img
-              src={templateImage}
+              src={carPhotoUrl || templateImage}
               alt=""
               className="absolute inset-0 w-full h-full object-cover blur-xl scale-125 opacity-50 pointer-events-none select-none"
             />
@@ -822,11 +914,22 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
               className="relative h-full mx-auto shadow-[0_10px_35px_rgba(0,0,0,0.7)] border-x border-white/10 bg-[#070E1A] overflow-hidden"
               style={{ aspectRatio: '571 / 1024', height: '100%' }}>
               
-              {/* Base Background Image */}
+              {/* Car photo background */}
+              {carPhotoUrl ? (
+                <img
+                  src={carPhotoUrl}
+                  alt={fields.title}
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none z-0"
+                />
+              ) : (
+                <div className="absolute inset-0 bg-[#070F1D] z-0" />
+              )}
+
+              {/* Base Template Overlay Image */}
               <img
                 src={templateImage}
                 alt="Plantilla Publicidad Okmmotors"
-                className="w-full h-full object-contain pointer-events-none select-none"
+                className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-[1]"
               />
 
               {/* In-place editable inputs overlay */}
@@ -842,11 +945,22 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
             className="relative rounded-2xl overflow-hidden shadow-2xl border-2 border-[#2A2F45] bg-[#070E1A] flex items-center justify-center transition-all hover:border-[#60A5FA50]"
             style={{ width: '280px', height: '502px' }}>
             
-            {/* Base Background Image */}
+            {/* Car photo background */}
+            {carPhotoUrl ? (
+              <img
+                src={carPhotoUrl}
+                alt={fields.title}
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none z-0"
+              />
+            ) : (
+              <div className="absolute inset-0 bg-[#070F1D] z-0" />
+            )}
+
+            {/* Base Template Overlay Image */}
             <img
               src={templateImage}
               alt="Plantilla Publicidad Okmmotors"
-              className="w-full h-full object-contain pointer-events-none select-none"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-[1]"
               style={{ width: '280px', height: '502px' }}
             />
 

@@ -1753,6 +1753,7 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                       onSelectIndex={setCurrentPhotoIndex}
                       onAddPhotos={handleAddPhotosToActiveBook}
                       targetPlatform={targetPlatform}
+                      onApplyFlyerTemplate={() => handleSelectContentType('publicidad')}
                     />
 
                     {/* Columna Derecha: Editor de Texto y Plantillas (Mismo tamaño y formato que Publicidad) */}
