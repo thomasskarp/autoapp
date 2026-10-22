@@ -264,27 +264,41 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     const sx = w / refW
     const sy = h / refH
 
-    // 0. Si hay foto del vehículo, dibujarla de fondo con cover exacto
+    // 0. Si hay foto del vehículo, dibujarla centrada en la ventana visual para que se vea TODO el auto completo
     if (carImg && carImg.naturalWidth > 0) {
       ctx.save()
+
+      // Fondo base de estudio oscuro
+      const bgGrad = ctx.createLinearGradient(ox, oy, ox, oy + h)
+      bgGrad.addColorStop(0, '#091122')
+      bgGrad.addColorStop(0.5, '#0D1728')
+      bgGrad.addColorStop(1, '#040810')
+      ctx.fillStyle = bgGrad
+      ctx.fillRect(ox, oy, w, h)
+
+      // Ventana visual del auto: entre la caja de título y la cinta (Canonical y: 235..575, h: 340)
+      const slotX = ox
+      const slotY = oy + 235 * sy
+      const slotW = w
+      const slotH = 340 * sy
+
       const imgW = carImg.naturalWidth
       const imgH = carImg.naturalHeight
-      const renderRatio = w / h
       const imgRatio = imgW / imgH
-      let sWidth = imgW
-      let sHeight = imgH
-      let sxCrop = 0
-      let syCrop = 0
 
-      if (imgRatio > renderRatio) {
-        sWidth = Math.round(imgH * renderRatio)
-        sxCrop = Math.round((imgW - sWidth) / 2)
-      } else {
-        sHeight = Math.round(imgW / renderRatio)
-        syCrop = Math.round((imgH - sHeight) / 2)
+      // Ajuste "contain" para que se vea TODO el auto de paragolpes a paragolpes sin recortes
+      let drawW = slotW
+      let drawH = Math.round(slotW / imgRatio)
+
+      if (drawH > slotH) {
+        drawH = slotH
+        drawW = Math.round(slotH * imgRatio)
       }
 
-      ctx.drawImage(carImg, sxCrop, syCrop, sWidth, sHeight, ox, oy, w, h)
+      const drawX = slotX + Math.round((slotW - drawW) / 2)
+      const drawY = slotY + Math.round((slotH - drawH) / 2)
+
+      ctx.drawImage(carImg, drawX, drawY, drawW, drawH)
       ctx.restore()
     }
 
@@ -914,15 +928,23 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
               className="relative h-full mx-auto shadow-[0_10px_35px_rgba(0,0,0,0.7)] border-x border-white/10 bg-[#070E1A] overflow-hidden"
               style={{ aspectRatio: '571 / 1024', height: '100%' }}>
               
-              {/* Car photo background */}
-              {carPhotoUrl ? (
-                <img
-                  src={carPhotoUrl}
-                  alt={fields.title}
-                  className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none z-0"
-                />
-              ) : (
-                <div className="absolute inset-0 bg-[#070F1D] z-0" />
+              {/* Fondo base oscuro */}
+              <div className="absolute inset-0 bg-gradient-to-b from-[#091122] via-[#0D1728] to-[#040810] z-0" />
+
+              {/* Foto del auto centrada y completa (sin zoom excesivo) */}
+              {carPhotoUrl && (
+                <div
+                  className="absolute inset-x-0 z-0 flex items-center justify-center pointer-events-none select-none overflow-hidden"
+                  style={{
+                    top: '23.0%',
+                    height: '33.2%'
+                  }}>
+                  <img
+                    src={carPhotoUrl}
+                    alt={fields.title}
+                    className="w-full h-full object-contain object-center"
+                  />
+                </div>
               )}
 
               {/* Base Template Overlay Image */}
@@ -945,15 +967,23 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
             className="relative rounded-2xl overflow-hidden shadow-2xl border-2 border-[#2A2F45] bg-[#070E1A] flex items-center justify-center transition-all hover:border-[#60A5FA50]"
             style={{ width: '280px', height: '502px' }}>
             
-            {/* Car photo background */}
-            {carPhotoUrl ? (
-              <img
-                src={carPhotoUrl}
-                alt={fields.title}
-                className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none z-0"
-              />
-            ) : (
-              <div className="absolute inset-0 bg-[#070F1D] z-0" />
+            {/* Fondo base oscuro */}
+            <div className="absolute inset-0 bg-gradient-to-b from-[#091122] via-[#0D1728] to-[#040810] z-0" />
+
+            {/* Foto del auto centrada y completa (sin zoom excesivo) */}
+            {carPhotoUrl && (
+              <div
+                className="absolute inset-x-0 z-0 flex items-center justify-center pointer-events-none select-none overflow-hidden"
+                style={{
+                  top: '23.0%',
+                  height: '33.2%'
+                }}>
+                <img
+                  src={carPhotoUrl}
+                  alt={fields.title}
+                  className="w-full h-full object-contain object-center"
+                />
+              </div>
             )}
 
             {/* Base Template Overlay Image */}

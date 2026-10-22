@@ -48,9 +48,30 @@ export async function POST(req: NextRequest) {
     const W = 571
     const H = 1024
 
-    // Escalar foto de fondo para cubrir exactamente 571x1024 (9:16)
-    const resizedBg = await sharp(bgBuffer)
-      .resize(W, H, { fit: 'cover', position: 'center' })
+    // Lienzo base de estudio oscuro 571x1024 (9:16)
+    const baseCanvas = await sharp({
+      create: {
+        width: W,
+        height: H,
+        channels: 4,
+        background: { r: 9, g: 17, b: 34, alpha: 1 }
+      }
+    }).png().toBuffer()
+
+    // Redimensionar foto del auto con fit: 'contain' para que entre COMPLETO en la ventana central (y: 235..575, h: 340)
+    const carResized = await sharp(bgBuffer)
+      .resize(W, 340, { fit: 'contain', background: { r: 9, g: 17, b: 34, alpha: 0 } })
+      .toBuffer()
+
+    // Montar foto del auto centrada sobre el fondo oscuro
+    const resizedBg = await sharp(baseCanvas)
+      .composite([
+        {
+          input: carResized,
+          top: 235,
+          left: 0
+        }
+      ])
       .toBuffer()
 
     // Cargar logo Okmmotors
