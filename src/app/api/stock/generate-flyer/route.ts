@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     const templatePath = path.join(process.cwd(), 'public', 'templates', 'plantilla_universal_clean.png')
     const templateBuffer = fs.readFileSync(templatePath)
 
-    const carHeight = 490
+    const carHeight = 510
     const carTop = 175
 
     // Redimensionar foto del auto cubriendo el ancho total del lienzo (sin márgenes laterales)
@@ -222,11 +222,11 @@ export async function POST(req: NextRequest) {
       </g>
 
       <g filter="url(#shadow)">
-        <rect x="24" y="643" width="523" height="46" rx="23" ry="23" 
+        <rect x="24" y="663" width="523" height="46" rx="23" ry="23" 
               fill="url(#pillGrad)" 
               stroke="#FFFFFF" 
               stroke-width="1.5" />
-        <text x="${W / 2}" y="672" 
+        <text x="${W / 2}" y="692" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="15" 
               font-weight="900" 
@@ -238,14 +238,14 @@ export async function POST(req: NextRequest) {
       </g>
 
       <g filter="url(#shadow)">
-        <rect x="15" y="700" width="541" height="126" rx="12" ry="12" 
+        <rect x="15" y="720" width="541" height="126" rx="12" ry="12" 
               fill="url(#cardGrad)" 
               stroke="#FFFFFF" 
               stroke-width="1" />
         
-        <path d="M 15 712 A 12 12 0 0 1 27 700 L 27 826 A 12 12 0 0 1 15 814 Z" fill="#C2410C"/>
+        <path d="M 15 732 A 12 12 0 0 1 27 720 L 27 846 A 12 12 0 0 1 15 834 Z" fill="#C2410C"/>
 
-        <text x="${(W + 12) / 2}" y="756" 
+        <text x="${(W + 12) / 2}" y="776" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="40" 
               font-weight="900" 
@@ -254,7 +254,7 @@ export async function POST(req: NextRequest) {
           ${card1Price}
         </text>
 
-        <text x="${(W + 12) / 2}" y="796" 
+        <text x="${(W + 12) / 2}" y="816" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="25" 
               font-weight="900" 
@@ -266,14 +266,14 @@ export async function POST(req: NextRequest) {
       </g>
 
       <g filter="url(#shadow)">
-        <rect x="15" y="840" width="541" height="126" rx="12" ry="12" 
+        <rect x="15" y="860" width="541" height="126" rx="12" ry="12" 
               fill="url(#cardGrad)" 
               stroke="#FFFFFF" 
               stroke-width="1" />
         
-        <path d="M 15 852 A 12 12 0 0 1 27 840 L 27 966 A 12 12 0 0 1 15 954 Z" fill="#C2410C"/>
+        <path d="M 15 872 A 12 12 0 0 1 27 860 L 27 986 A 12 12 0 0 1 15 974 Z" fill="#C2410C"/>
 
-        <text x="${(W + 12) / 2}" y="896" 
+        <text x="${(W + 12) / 2}" y="916" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="40" 
               font-weight="900" 
@@ -282,7 +282,7 @@ export async function POST(req: NextRequest) {
           ${card2Price}
         </text>
 
-        <text x="${(W + 12) / 2}" y="936" 
+        <text x="${(W + 12) / 2}" y="956" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="24" 
               font-weight="900" 
