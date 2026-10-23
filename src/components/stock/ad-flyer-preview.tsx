@@ -264,23 +264,18 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     const sx = w / refW
     const sy = h / refH
 
-    // 0. Si hay foto del vehículo, dibujarla centrada en la ventana visual para que se vea TODO el auto completo
+    // 1. Dibujar la plantilla oficial enviada por el usuario como lienzo base
+    ctx.drawImage(baseImg, ox, oy, w, h)
+
+    // 2. Si hay foto del vehículo, dibujarla centrada en el recuadro blanco para que se vea TODO el auto
     if (carImg && carImg.naturalWidth > 0) {
       ctx.save()
 
-      // Fondo base de estudio oscuro
-      const bgGrad = ctx.createLinearGradient(ox, oy, ox, oy + h)
-      bgGrad.addColorStop(0, '#091122')
-      bgGrad.addColorStop(0.5, '#0D1728')
-      bgGrad.addColorStop(1, '#040810')
-      ctx.fillStyle = bgGrad
-      ctx.fillRect(ox, oy, w, h)
-
-      // Ventana visual del auto: entre la caja de título y la cinta (Canonical y: 235..575, h: 340)
+      // Ventana central del auto: espacio blanco de la plantilla (Canonical y: 250..565, h: 315)
       const slotX = ox
-      const slotY = oy + 235 * sy
+      const slotY = oy + 250 * sy
       const slotW = w
-      const slotH = 340 * sy
+      const slotH = 315 * sy
 
       const imgW = carImg.naturalWidth
       const imgH = carImg.naturalHeight
@@ -301,9 +296,6 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       ctx.drawImage(carImg, drawX, drawY, drawW, drawH)
       ctx.restore()
     }
-
-    // 1. Dibujar el overlay de la plantilla universal
-    ctx.drawImage(baseImg, ox, oy, w, h)
 
     // 2. Title Box (Canonical x: 28..543, y: 152..258, w: 515, h: 106, rx: 12)
     const titleLeft = ox + 28 * sx
@@ -928,16 +920,20 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
               className="relative h-full mx-auto shadow-[0_10px_35px_rgba(0,0,0,0.7)] border-x border-white/10 bg-[#070E1A] overflow-hidden"
               style={{ aspectRatio: '571 / 1024', height: '100%' }}>
               
-              {/* Fondo base oscuro */}
-              <div className="absolute inset-0 bg-gradient-to-b from-[#091122] via-[#0D1728] to-[#040810] z-0" />
+              {/* Base Template Image enviada por el usuario */}
+              <img
+                src={templateImage}
+                alt="Plantilla Publicidad Okmmotors"
+                className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-0"
+              />
 
-              {/* Foto del auto centrada y completa (sin zoom excesivo) */}
+              {/* Foto del auto centrada y completa en el recuadro blanco de la plantilla */}
               {carPhotoUrl && (
                 <div
-                  className="absolute inset-x-0 z-0 flex items-center justify-center pointer-events-none select-none overflow-hidden"
+                  className="absolute inset-x-0 z-[2] flex items-center justify-center pointer-events-none select-none overflow-hidden"
                   style={{
-                    top: '23.0%',
-                    height: '33.2%'
+                    top: '25.0%',
+                    height: '30.2%'
                   }}>
                   <img
                     src={carPhotoUrl}
@@ -946,13 +942,6 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                   />
                 </div>
               )}
-
-              {/* Base Template Overlay Image */}
-              <img
-                src={templateImage}
-                alt="Plantilla Publicidad Okmmotors"
-                className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-[1]"
-              />
 
               {/* In-place editable inputs overlay */}
               {renderOverlayInputs()}
@@ -967,16 +956,21 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
             className="relative rounded-2xl overflow-hidden shadow-2xl border-2 border-[#2A2F45] bg-[#070E1A] flex items-center justify-center transition-all hover:border-[#60A5FA50]"
             style={{ width: '280px', height: '502px' }}>
             
-            {/* Fondo base oscuro */}
-            <div className="absolute inset-0 bg-gradient-to-b from-[#091122] via-[#0D1728] to-[#040810] z-0" />
+            {/* Base Template Image enviada por el usuario */}
+            <img
+              src={templateImage}
+              alt="Plantilla Publicidad Okmmotors"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-0"
+              style={{ width: '280px', height: '502px' }}
+            />
 
-            {/* Foto del auto centrada y completa (sin zoom excesivo) */}
+            {/* Foto del auto centrada y completa en el recuadro blanco de la plantilla */}
             {carPhotoUrl && (
               <div
-                className="absolute inset-x-0 z-0 flex items-center justify-center pointer-events-none select-none overflow-hidden"
+                className="absolute inset-x-0 z-[2] flex items-center justify-center pointer-events-none select-none overflow-hidden"
                 style={{
-                  top: '23.0%',
-                  height: '33.2%'
+                  top: '25.0%',
+                  height: '30.2%'
                 }}>
                 <img
                   src={carPhotoUrl}
@@ -985,14 +979,6 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                 />
               </div>
             )}
-
-            {/* Base Template Overlay Image */}
-            <img
-              src={templateImage}
-              alt="Plantilla Publicidad Okmmotors"
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-[1]"
-              style={{ width: '280px', height: '502px' }}
-            />
 
             {/* In-place editable inputs overlay */}
             {renderOverlayInputs()}

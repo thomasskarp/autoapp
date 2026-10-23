@@ -48,27 +48,21 @@ export async function POST(req: NextRequest) {
     const W = 571
     const H = 1024
 
-    // Lienzo base de estudio oscuro 571x1024 (9:16)
-    const baseCanvas = await sharp({
-      create: {
-        width: W,
-        height: H,
-        channels: 4,
-        background: { r: 9, g: 17, b: 34, alpha: 1 }
-      }
-    }).png().toBuffer()
+    // Cargar la plantilla exacta enviada por el usuario como lienzo base
+    const templatePath = path.join(process.cwd(), 'public', 'templates', 'plantilla_universal_clean.png')
+    const templateBuffer = fs.readFileSync(templatePath)
 
-    // Redimensionar foto del auto con fit: 'contain' para que entre COMPLETO en la ventana central (y: 235..575, h: 340)
+    // Redimensionar foto del auto con fit: 'contain' para que entre COMPLETA y centrada en el recuadro blanco (y: 250..565, h: 315)
     const carResized = await sharp(bgBuffer)
-      .resize(W, 340, { fit: 'contain', background: { r: 9, g: 17, b: 34, alpha: 0 } })
+      .resize(W, 315, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
       .toBuffer()
 
-    // Montar foto del auto centrada sobre el fondo oscuro
-    const resizedBg = await sharp(baseCanvas)
+    // Montar foto del auto sobre el recuadro blanco de la plantilla del usuario
+    const resizedBg = await sharp(templateBuffer)
       .composite([
         {
           input: carResized,
-          top: 235,
+          top: 250,
           left: 0
         }
       ])
