@@ -273,11 +273,11 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       ctx.save()
 
       // Ventana expandida al ancho total: de x: ox a ox + w (ancho total w, sin márgenes laterales)
-      // Empieza detrás de la caja de título (175) y se extiende detrás de la cinta blanca inferior (625)
+      // Empieza detrás de la caja de título (175) y se extiende detrás de la cinta blanca inferior (665)
       const slotX = ox
       const slotY = oy + Math.round(175 * sy)
       const slotW = w
-      const slotH = Math.round(450 * sy)
+      const slotH = Math.round(490 * sy)
 
       const imgW = carImg.naturalWidth
       const imgH = carImg.naturalHeight
@@ -357,9 +357,9 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     ctx.fillText(fields.subtitle.trim().toUpperCase(), ox + w / 2, titleTop + titleHeight * 0.74)
     ctx.restore()
 
-    // 3. Banner Ribbon (Canonical x: 24..547, y: 597..643, w: 523, h: 46, rx: 23)
+    // 3. Banner Ribbon (Canonical x: 24..547, y: 643..689, w: 523, h: 46, rx: 23)
     const bLeft = ox + 24 * sx
-    const bTop = oy + 597 * sy
+    const bTop = oy + 643 * sy
     const bW = 523 * sx
     const bH = 46 * sy
 
@@ -432,10 +432,10 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       }
 
       // Card 1 (Precio Final)
-      drawFullWidthCard(oy + 654 * sy, 126 * sy, fields.card1Price, fields.card1Sub)
+      drawFullWidthCard(oy + 700 * sy, 126 * sy, fields.card1Price, fields.card1Sub)
 
       // Card 2 (Financiación en Cuotas)
-      drawFullWidthCard(oy + 794 * sy, 126 * sy, fields.card2Price, fields.card2Sub)
+      drawFullWidthCard(oy + 840 * sy, 126 * sy, fields.card2Price, fields.card2Sub)
     } else {
       // 4 tarjetas cuadrícula clásica 2x2
       const drawCard = (
@@ -739,7 +739,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       <div
         className="absolute z-10 flex items-center justify-center px-2 rounded-full border border-white/80 shadow-[0_2px_8px_rgba(0,0,0,0.18)] hover:border-[#60A5FA60] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
         style={{
-          top: '58.3%',
+          top: '62.8%',
           left: '4.2%',
           width: '91.6%',
           height: '4.5%',
@@ -764,7 +764,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
           <div
             className="absolute z-10 flex flex-col justify-center items-center text-center overflow-hidden pl-3 pr-2 py-0.5 rounded-xl border border-white/90 shadow-[0_4px_12px_rgba(0,0,0,0.22)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-2 focus-within:ring-[#60A5FA50] transition-all"
             style={{
-              top: '63.9%',
+              top: '68.4%',
               left: '2.6%',
               width: '94.8%',
               height: '12.3%',
@@ -793,7 +793,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
           <div
             className="absolute z-10 flex flex-col justify-center items-center text-center overflow-hidden pl-3 pr-2 py-0.5 rounded-xl border border-white/90 shadow-[0_4px_12px_rgba(0,0,0,0.22)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-2 focus-within:ring-[#60A5FA50] transition-all"
             style={{
-              top: '77.5%',
+              top: '82.0%',
               left: '2.6%',
               width: '94.8%',
               height: '12.3%',
@@ -1009,7 +1009,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                   className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
                   style={{
                     top: '17.0%',
-                    height: '44.5%',
+                    height: '48.0%',
                     WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)',
                     maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)'
                   }}>
@@ -1048,7 +1048,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                 className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
                 style={{
                   top: '17.0%',
-                  height: '44.5%',
+                  height: '48.0%',
                   WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)',
                   maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)'
                 }}>
