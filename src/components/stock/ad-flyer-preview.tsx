@@ -267,7 +267,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     // 1. Dibujar la plantilla oficial enviada por el usuario como lienzo base
     ctx.drawImage(baseImg, ox, oy, w, h)
 
-    // 2. Si hay foto del vehículo, dibujarla con expansión y difuminado suave (máscara alfa pura sin líneas de corte)
+    // 2. Si hay foto del vehículo, dibujarla con fusión/degradado de largo alcance
     if (carImg && carImg.naturalWidth > 0) {
       ctx.save()
 
@@ -281,7 +281,6 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       const imgH = carImg.naturalHeight
       const imgRatio = imgW / imgH
 
-      // Ajuste para expandir el auto
       let drawW = slotW
       let drawH = Math.round(slotW / imgRatio)
 
@@ -293,37 +292,47 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       const drawX = slotX + Math.round((slotW - drawW) / 2)
       const drawY = slotY + Math.round((slotH - drawH) / 2)
 
-      // Usar canvas temporal con máscara de transparencia gradual pura para fusionar con el fondo oscuro
-      try {
-        const carCanvas = document.createElement('canvas')
-        carCanvas.width = drawW
-        carCanvas.height = drawH
-        const carCtx = carCanvas.getContext('2d')
+      // 1. Dibujar auto centrado
+      ctx.drawImage(carImg, drawX, drawY, drawW, drawH)
 
-        if (carCtx) {
-          carCtx.drawImage(carImg, 0, 0, drawW, drawH)
-          carCtx.globalCompositeOperation = 'destination-in'
+      // 2. FUSIÓN DE LARGO ALCANCE SUPERIOR (125px): funde el fondo claro de la foto con el azul oscuro
+      const topFadeH = 125 * sy
+      const topGrad = ctx.createLinearGradient(0, drawY, 0, drawY + topFadeH)
+      topGrad.addColorStop(0, '#060E1C')
+      topGrad.addColorStop(0.20, '#071120')
+      topGrad.addColorStop(0.42, 'rgba(7, 17, 32, 0.85)')
+      topGrad.addColorStop(0.68, 'rgba(7, 17, 32, 0.45)')
+      topGrad.addColorStop(0.88, 'rgba(7, 17, 32, 0.15)')
+      topGrad.addColorStop(1, 'rgba(7, 17, 32, 0)')
+      ctx.fillStyle = topGrad
+      ctx.fillRect(ox, drawY - 2, w, topFadeH + 2)
 
-          const alphaGrad = carCtx.createLinearGradient(0, 0, 0, drawH)
-          alphaGrad.addColorStop(0, 'rgba(0,0,0,0)')
-          alphaGrad.addColorStop(0.08, 'rgba(0,0,0,0.3)')
-          alphaGrad.addColorStop(0.18, 'rgba(0,0,0,0.8)')
-          alphaGrad.addColorStop(0.28, 'rgba(0,0,0,1)')
-          alphaGrad.addColorStop(0.72, 'rgba(0,0,0,1)')
-          alphaGrad.addColorStop(0.82, 'rgba(0,0,0,0.8)')
-          alphaGrad.addColorStop(0.92, 'rgba(0,0,0,0.3)')
-          alphaGrad.addColorStop(1, 'rgba(0,0,0,0)')
+      // 3. FUSIÓN DE LARGO ALCANCE INFERIOR (125px): funde el fondo claro de la foto con el azul oscuro
+      const btmFadeH = 125 * sy
+      const btmY = drawY + drawH - btmFadeH
+      const btmGrad = ctx.createLinearGradient(0, btmY, 0, drawY + drawH)
+      btmGrad.addColorStop(0, 'rgba(6, 14, 28, 0)')
+      btmGrad.addColorStop(0.12, 'rgba(6, 14, 28, 0.15)')
+      btmGrad.addColorStop(0.32, 'rgba(6, 14, 28, 0.45)')
+      btmGrad.addColorStop(0.58, 'rgba(6, 14, 28, 0.85)')
+      btmGrad.addColorStop(0.80, '#071120')
+      btmGrad.addColorStop(1, '#060E1C')
+      ctx.fillStyle = btmGrad
+      ctx.fillRect(ox, btmY, w, btmFadeH + 4)
 
-          carCtx.fillStyle = alphaGrad
-          carCtx.fillRect(0, 0, drawW, drawH)
+      // 4. Fusión lateral suave
+      const sideFadeW = 35 * sx
+      const leftGrad = ctx.createLinearGradient(ox, 0, ox + sideFadeW, 0)
+      leftGrad.addColorStop(0, '#060E1C')
+      leftGrad.addColorStop(1, 'rgba(6, 14, 28, 0)')
+      ctx.fillStyle = leftGrad
+      ctx.fillRect(ox, drawY, sideFadeW, drawH)
 
-          ctx.drawImage(carCanvas, drawX, drawY)
-        } else {
-          ctx.drawImage(carImg, drawX, drawY, drawW, drawH)
-        }
-      } catch (e) {
-        ctx.drawImage(carImg, drawX, drawY, drawW, drawH)
-      }
+      const rightGrad = ctx.createLinearGradient(ox + w - sideFadeW, 0, ox + w, 0)
+      rightGrad.addColorStop(0, 'rgba(6, 14, 28, 0)')
+      rightGrad.addColorStop(1, '#060E1C')
+      ctx.fillStyle = rightGrad
+      ctx.fillRect(ox + w - sideFadeW, drawY, sideFadeW, drawH)
 
       ctx.restore()
     }
@@ -958,20 +967,52 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-0"
               />
 
-              {/* Foto del auto expandida y fusionada con difuminado suave invisible (sin líneas de corte) */}
+              {/* Foto del auto expandida y fusionada con degradados de largo alcance */}
               {carPhotoUrl && (
                 <div
-                  className="absolute inset-x-0 z-[2] flex items-center justify-center pointer-events-none select-none overflow-hidden"
+                  className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
                   style={{
                     top: '21.0%',
-                    height: '36.5%',
-                    maskImage: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.3) 6%, rgba(0,0,0,0.85) 16%, black 28%, black 72%, rgba(0,0,0,0.85) 84%, rgba(0,0,0,0.3) 94%, transparent 100%)',
-                    WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.3) 6%, rgba(0,0,0,0.85) 16%, black 28%, black 72%, rgba(0,0,0,0.85) 84%, rgba(0,0,0,0.3) 94%, transparent 100%)'
+                    height: '36.5%'
                   }}>
                   <img
                     src={carPhotoUrl}
                     alt={fields.title}
                     className="w-full h-full object-contain object-center scale-105"
+                  />
+
+                  {/* Fusión de largo alcance superior (funde el fondo claro con el azul oscuro) */}
+                  <div
+                    className="absolute inset-x-0 top-0 pointer-events-none"
+                    style={{
+                      height: '42%',
+                      background: 'linear-gradient(to bottom, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
+                    }}
+                  />
+
+                  {/* Fusión de largo alcance inferior (funde el fondo claro con el azul oscuro) */}
+                  <div
+                    className="absolute inset-x-0 bottom-0 pointer-events-none"
+                    style={{
+                      height: '44%',
+                      background: 'linear-gradient(to top, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
+                    }}
+                  />
+
+                  {/* Fusión lateral suave */}
+                  <div
+                    className="absolute inset-y-0 left-0 pointer-events-none"
+                    style={{
+                      width: '7%',
+                      background: 'linear-gradient(to right, #060E1C 0%, transparent 100%)'
+                    }}
+                  />
+                  <div
+                    className="absolute inset-y-0 right-0 pointer-events-none"
+                    style={{
+                      width: '7%',
+                      background: 'linear-gradient(to left, #060E1C 0%, transparent 100%)'
+                    }}
                   />
                 </div>
               )}
@@ -997,20 +1038,52 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
               style={{ width: '280px', height: '502px' }}
             />
 
-            {/* Foto del auto expandida y fusionada con difuminado suave invisible (sin líneas de corte) */}
+            {/* Foto del auto expandida y fusionada con degradados de largo alcance */}
             {carPhotoUrl && (
               <div
-                className="absolute inset-x-0 z-[2] flex items-center justify-center pointer-events-none select-none overflow-hidden"
+                className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
                 style={{
                   top: '21.0%',
-                  height: '36.5%',
-                  maskImage: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.3) 6%, rgba(0,0,0,0.85) 16%, black 28%, black 72%, rgba(0,0,0,0.85) 84%, rgba(0,0,0,0.3) 94%, transparent 100%)',
-                  WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.3) 6%, rgba(0,0,0,0.85) 16%, black 28%, black 72%, rgba(0,0,0,0.85) 84%, rgba(0,0,0,0.3) 94%, transparent 100%)'
+                  height: '36.5%'
                 }}>
                 <img
                   src={carPhotoUrl}
                   alt={fields.title}
                   className="w-full h-full object-contain object-center scale-105"
+                />
+
+                {/* Fusión de largo alcance superior (funde el fondo claro con el azul oscuro) */}
+                <div
+                  className="absolute inset-x-0 top-0 pointer-events-none"
+                  style={{
+                    height: '42%',
+                    background: 'linear-gradient(to bottom, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
+                  }}
+                />
+
+                {/* Fusión de largo alcance inferior (funde el fondo claro con el azul oscuro) */}
+                <div
+                  className="absolute inset-x-0 bottom-0 pointer-events-none"
+                  style={{
+                    height: '44%',
+                    background: 'linear-gradient(to top, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
+                  }}
+                />
+
+                {/* Fusión lateral suave */}
+                <div
+                  className="absolute inset-y-0 left-0 pointer-events-none"
+                  style={{
+                    width: '7%',
+                    background: 'linear-gradient(to right, #060E1C 0%, transparent 100%)'
+                  }}
+                />
+                <div
+                  className="absolute inset-y-0 right-0 pointer-events-none"
+                  style={{
+                    width: '7%',
+                    background: 'linear-gradient(to left, #060E1C 0%, transparent 100%)'
+                  }}
                 />
               </div>
             )}

@@ -57,40 +57,52 @@ export async function POST(req: NextRequest) {
       .resize(W, 365, { fit: 'contain', background: { r: 7, g: 15, b: 29, alpha: 0 } })
       .toBuffer()
 
-    // Máscara de transparencia suave continua en alfa puro (sin líneas de corte)
-    const maskSvg = Buffer.from(`
+    // Fusión de largo alcance superior e inferior (130px) que integra el fondo claro del auto con el azul oscuro de los banners
+    const fadeOverlaySvg = Buffer.from(`
       <svg width="${W}" height="365" viewBox="0 0 ${W} 365" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="softMask" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
-            <stop offset="8%" stop-color="#000000" stop-opacity="0.3"/>
-            <stop offset="18%" stop-color="#000000" stop-opacity="0.85"/>
-            <stop offset="28%" stop-color="#000000" stop-opacity="1"/>
-            <stop offset="72%" stop-color="#000000" stop-opacity="1"/>
-            <stop offset="82%" stop-color="#000000" stop-opacity="0.85"/>
-            <stop offset="92%" stop-color="#000000" stop-opacity="0.3"/>
-            <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+          <linearGradient id="topFade" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#060E1C" stop-opacity="1"/>
+            <stop offset="18%" stop-color="#071120" stop-opacity="0.95"/>
+            <stop offset="42%" stop-color="#071120" stop-opacity="0.85"/>
+            <stop offset="68%" stop-color="#071120" stop-opacity="0.45"/>
+            <stop offset="88%" stop-color="#071120" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#071120" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="btmFade" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#060E1C" stop-opacity="0"/>
+            <stop offset="12%" stop-color="#060E1C" stop-opacity="0.15"/>
+            <stop offset="32%" stop-color="#060E1C" stop-opacity="0.45"/>
+            <stop offset="58%" stop-color="#060E1C" stop-opacity="0.85"/>
+            <stop offset="82%" stop-color="#071120" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#060E1C" stop-opacity="1"/>
+          </linearGradient>
+          <linearGradient id="leftFade" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#060E1C" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#060E1C" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="rightFade" x1="1" y1="0" x2="0" y2="0">
+            <stop offset="0%" stop-color="#060E1C" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#060E1C" stop-opacity="0"/>
           </linearGradient>
         </defs>
-        <rect x="0" y="0" width="${W}" height="365" fill="url(#softMask)"/>
+        <rect x="0" y="0" width="${W}" height="135" fill="url(#topFade)"/>
+        <rect x="0" y="235" width="${W}" height="130" fill="url(#btmFade)"/>
+        <rect x="0" y="0" width="35" height="365" fill="url(#leftFade)"/>
+        <rect x="${W - 35}" y="0" width="35" height="365" fill="url(#rightFade)"/>
       </svg>
     `)
-
-    let carWithFade = carResized
-    try {
-      carWithFade = await sharp(carResized)
-        .composite([{ input: maskSvg, blend: 'dest-in' }])
-        .png()
-        .toBuffer()
-    } catch (e) {
-      console.warn('Error applying alpha mask to car in route:', e)
-    }
 
     // Montar foto del auto expandida y con difuminado suave sobre la plantilla oscura
     const resizedBg = await sharp(templateBuffer)
       .composite([
         {
-          input: carWithFade,
+          input: carResized,
+          top: 215,
+          left: 0
+        },
+        {
+          input: fadeOverlaySvg,
           top: 215,
           left: 0
         }
