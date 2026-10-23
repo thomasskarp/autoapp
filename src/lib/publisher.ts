@@ -1,7 +1,7 @@
 // ─── AutoApp Publisher Utility ───────────────────────────────────────────────
 // Communicates with Chrome Extension "Auto-Cyborg 360" via URL Hash, Chrome Extension API, DOM Events & postMessage
 
-import { getAllVehiclePhotos } from '@/lib/utils'
+import { getAllVehiclePhotos, formatImageUrl } from '@/lib/utils'
 
 export interface PublishVehiclePayload {
   id: string
@@ -167,8 +167,10 @@ export function formatVehicleForExtension(vehicle: any, options?: { customCopy?:
   const marcaFormatted = toTitleCase(marcaRaw)
   const modeloFormatted = formatModelTitle(modeloClean)
 
-  // Extract ALL photos (Portada + FOTOS_EXTRA parsed safely as JSON array or string list)
-  const allPhotoLinks = getAllVehiclePhotos(vehicle)
+  // Extract ALL photos (prefer vehicle.photoLinks if caller already customized it e.g. selected photos or flyer)
+  const allPhotoLinks: string[] = (Array.isArray(vehicle.photoLinks) && vehicle.photoLinks.length > 0)
+    ? Array.from(new Set(vehicle.photoLinks.map((p: string) => formatImageUrl(p) || p).filter(Boolean))) as string[]
+    : getAllVehiclePhotos(vehicle)
 
   const numericPrice = typeof vehicle.Precio_Venta === 'number'
     ? vehicle.Precio_Venta

@@ -16,6 +16,7 @@ export interface AdFlyerPreviewHandle {
 
 interface Props {
   vehicle?: Vehicle | null
+  carPhotoUrl?: string | null
   templateImage?: string
   customText: string
   onCustomTextChange: (newVal: string) => void
@@ -511,11 +512,56 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
   // Ultra HD canvas rendering for Download, Copy and Auto-Publishing (1080x1920 or 1200x1200)
   const generateCompositeBlob = async (targetFormat?: '9:16' | '1:1'): Promise<Blob> => {
     const chosenFormat = targetFormat || aspectRatio
-    const carPhotoUrl = vehicle?.FOTO_PORTADA || (vehicle as any)?.Fotos?.[0] || (vehicle?.FOTOS_EXTRA ? vehicle.FOTOS_EXTRA.split(',')[0]?.trim() : null) || null
+    const activeCarPhoto = props.carPhotoUrl || vehicle?.FOTO_PORTADA || (vehicle as any)?.Fotos?.[0] || (vehicle?.FOTOS_EXTRA ? vehicle.FOTOS_EXTRA.split(',')[0]?.trim() : null) || null
 
-    const loadImage = (src: string): Promise<HTMLImageElement | null> => {
+    const loadImage = async (src: string): Promise<HTMLImageElement | null> => {
+      if (!src) return null
+
+      // 1. Data URLs o Blob URLs se cargan directamente sin restricciones de CORS
+      if (src.startsWith('data:') || src.startsWith('blob:')) {
+        return new Promise((resolve) => {
+          const i = new Image()
+          i.onload = () => resolve(i)
+          i.onerror = () => resolve(null)
+          i.src = src
+          if (i.complete && i.naturalWidth > 0) resolve(i)
+        })
+      }
+
+      // 2. URLs relativas locales (ej: /templates/...)
+      if (src.startsWith('/')) {
+        return new Promise((resolve) => {
+          const i = new Image()
+          i.crossOrigin = 'anonymous'
+          i.onload = () => resolve(i)
+          i.onerror = () => resolve(null)
+          i.src = src
+          if (i.complete && i.naturalWidth > 0) resolve(i)
+        })
+      }
+
+      // 3. URLs remotas (Google Drive, Supabase, Cloudinary, etc.):
+      // Convertir a Blob URL local mediante proxy para eliminar errores de CORS y Canvas taint
+      try {
+        const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(src.trim())}`
+        const res = await fetch(proxyUrl)
+        if (res.ok) {
+          const blob = await res.blob()
+          const objectUrl = URL.createObjectURL(blob)
+          return new Promise((resolve) => {
+            const i = new Image()
+            i.onload = () => resolve(i)
+            i.onerror = () => resolve(null)
+            i.src = objectUrl
+            if (i.complete && i.naturalWidth > 0) resolve(i)
+          })
+        }
+      } catch (err) {
+        console.warn('[AdFlyerPreview] Proxy fetch failed for car photo, trying direct load:', err)
+      }
+
+      // 4. Fallback directo con crossOrigin
       return new Promise((resolve) => {
-        if (!src) return resolve(null)
         const i = new Image()
         i.crossOrigin = 'anonymous'
         i.onload = () => resolve(i)
@@ -527,7 +573,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
 
     const [img, carImg] = await Promise.all([
       loadImage(templateImage),
-      carPhotoUrl ? loadImage(carPhotoUrl) : Promise.resolve(null)
+      activeCarPhoto ? loadImage(activeCarPhoto) : Promise.resolve(null)
     ])
 
     if (!img) throw new Error('No se pudo cargar la imagen de la plantilla')
@@ -655,7 +701,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
   }
 
   const isCustom = templateImage !== DEFAULT_TEMPLATE_IMAGE
-  const carPhotoUrl = vehicle?.FOTO_PORTADA || (vehicle as any)?.Fotos?.[0] || (vehicle?.FOTOS_EXTRA ? vehicle.FOTOS_EXTRA.split(',')[0]?.trim() : null) || null
+  const carPhotoUrl = props.carPhotoUrl || vehicle?.FOTO_PORTADA || (vehicle as any)?.Fotos?.[0] || (vehicle?.FOTOS_EXTRA ? vehicle.FOTOS_EXTRA.split(',')[0]?.trim() : null) || null
   const isTwoCards = !fields.card3Price
 
   // Shared in-place editable inputs overlay for flyer (pixel-perfect in both 9:16 and 1:1)

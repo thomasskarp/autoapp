@@ -1694,6 +1694,7 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                     <AdFlyerPreview
                       ref={adFlyerRef}
                       vehicle={vehicle}
+                      carPhotoUrl={selectedPhotos[portadaIndex] || selectedPhotos[0] || currentPhoto || vehicle?.FOTO_PORTADA}
                       targetPlatform={targetPlatform}
                       templateImage={currentPublicidad.imageUrl}
                       customText={customText}

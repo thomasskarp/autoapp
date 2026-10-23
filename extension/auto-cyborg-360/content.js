@@ -1089,18 +1089,38 @@ async function prepareFacebookFiles(car, onProgress) {
   return files
 }
 
-// Inyección de fotos en el input de Facebook Marketplace
+// Inyección de fotos en el input de Facebook Marketplace (exactamente una sola vez por imagen)
 async function injectPhotosIntoFacebook(files) {
   if (!files || files.length === 0) return false
   const fileInput = findFacebookFileInput()
   if (!fileInput) {
-    console.warn('[Auto-Cyborg] No se encontró input[type="file"] en Facebook Marketplace')
+    console.warn('[Auto-Cyborg] No se encontró input[type="file"] en Facebook Marketplace, intentando vía dropzone...')
+    const dropzone = findFacebookDropzone()
+    if (dropzone) {
+      try {
+        const dt = new DataTransfer()
+        for (const f of files) dt.items.add(f)
+        dropzone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+        console.log(`✅ [Auto-Cyborg] ${files.length} fotos inyectadas vía dropzone en Facebook Marketplace!`)
+        return true
+      } catch (e) {}
+    }
     return false
   }
 
   try {
-    const dt = new DataTransfer()
+    // Deduplicar archivos para garantizar que cada imagen se publique una sola vez
+    const uniqueFiles = []
+    const seenNames = new Set()
     for (const f of files) {
+      if (!seenNames.has(f.name)) {
+        seenNames.add(f.name)
+        uniqueFiles.push(f)
+      }
+    }
+
+    const dt = new DataTransfer()
+    for (const f of uniqueFiles) {
       dt.items.add(f)
     }
 
@@ -1108,19 +1128,7 @@ async function injectPhotosIntoFacebook(files) {
     fileInput.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
     fileInput.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
 
-    const dropzone = findFacebookDropzone() || fileInput.parentElement
-    if (dropzone) {
-      try {
-        const dropEvt = new DragEvent('drop', {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dt
-        })
-        dropzone.dispatchEvent(dropEvt)
-      } catch (e) {}
-    }
-
-    console.log(`✅ [Auto-Cyborg] ${files.length} fotos inyectadas en Facebook Marketplace!`)
+    console.log(`✅ [Auto-Cyborg] ${uniqueFiles.length} foto(s) inyectada(s) exactamente una sola vez en Facebook Marketplace!`)
     return true
   } catch (err) {
     console.error('[Auto-Cyborg] Error inyectando fotos en Facebook:', err)
@@ -2082,6 +2090,10 @@ async function initFacebookMarketplaceAutomation(carData) {
     console.log('🛑 [Auto-Cyborg 360] El vehículo ya fue autocompletado en esta sesión. No se repetirá.')
     return
   }
+
+  // Reset de estado para el nuevo vehículo
+  cachedFacebookFiles = []
+  isFacebookPhotosInjected = false
 
   console.log('🤖 [Auto-Cyborg 360] Iniciando flujo automático de Facebook Marketplace con:', carData)
   const car = carData

@@ -122,6 +122,11 @@ export function formatImageUrl(rawUrl?: string | null): string | null {
     return clean
   }
 
+  // 4. Data URLs and Blob URLs
+  if (clean.startsWith('data:image/') || clean.startsWith('blob:')) {
+    return clean
+  }
+
   return null
 }
 
