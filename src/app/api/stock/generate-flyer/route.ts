@@ -52,8 +52,8 @@ export async function POST(req: NextRequest) {
     const templatePath = path.join(process.cwd(), 'public', 'templates', 'plantilla_universal_clean.png')
     const templateBuffer = fs.readFileSync(templatePath)
 
-    const carHeight = 415
-    const carTop = 190
+    const carHeight = 450
+    const carTop = 175
 
     // Redimensionar foto del auto cubriendo el ancho total del lienzo (sin márgenes laterales)
     const carResized = await sharp(bgBuffer)
@@ -195,12 +195,12 @@ export async function POST(req: NextRequest) {
       </text>
 
       <g filter="url(#shadow)">
-        <rect x="28" y="152" width="515" height="106" rx="12" ry="12" 
+        <rect x="28" y="138" width="515" height="106" rx="12" ry="12" 
               fill="url(#titleBoxGrad)" 
               stroke="#1E293B" 
               stroke-width="1.5" />
         
-        <text x="${W / 2}" y="196" 
+        <text x="${W / 2}" y="182" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="25" 
               font-weight="900" 
@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
           ${titleText}
         </text>
 
-        <text x="${W / 2}" y="228" 
+        <text x="${W / 2}" y="214" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="13.5" 
               font-weight="700" 
@@ -222,11 +222,11 @@ export async function POST(req: NextRequest) {
       </g>
 
       <g filter="url(#shadow)">
-        <rect x="24" y="569" width="523" height="46" rx="23" ry="23" 
+        <rect x="24" y="597" width="523" height="46" rx="23" ry="23" 
               fill="url(#pillGrad)" 
               stroke="#FFFFFF" 
               stroke-width="1.5" />
-        <text x="${W / 2}" y="598" 
+        <text x="${W / 2}" y="626" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="15" 
               font-weight="900" 
@@ -238,14 +238,14 @@ export async function POST(req: NextRequest) {
       </g>
 
       <g filter="url(#shadow)">
-        <rect x="15" y="626" width="541" height="126" rx="12" ry="12" 
+        <rect x="15" y="654" width="541" height="126" rx="12" ry="12" 
               fill="url(#cardGrad)" 
               stroke="#FFFFFF" 
               stroke-width="1" />
         
-        <path d="M 15 638 A 12 12 0 0 1 27 626 L 27 752 A 12 12 0 0 1 15 740 Z" fill="#C2410C"/>
+        <path d="M 15 666 A 12 12 0 0 1 27 654 L 27 780 A 12 12 0 0 1 15 768 Z" fill="#C2410C"/>
 
-        <text x="${(W + 12) / 2}" y="682" 
+        <text x="${(W + 12) / 2}" y="710" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="40" 
               font-weight="900" 
@@ -254,7 +254,7 @@ export async function POST(req: NextRequest) {
           ${card1Price}
         </text>
 
-        <text x="${(W + 12) / 2}" y="722" 
+        <text x="${(W + 12) / 2}" y="750" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="25" 
               font-weight="900" 
@@ -266,14 +266,14 @@ export async function POST(req: NextRequest) {
       </g>
 
       <g filter="url(#shadow)">
-        <rect x="15" y="766" width="541" height="126" rx="12" ry="12" 
+        <rect x="15" y="794" width="541" height="126" rx="12" ry="12" 
               fill="url(#cardGrad)" 
               stroke="#FFFFFF" 
               stroke-width="1" />
         
-        <path d="M 15 778 A 12 12 0 0 1 27 766 L 27 892 A 12 12 0 0 1 15 880 Z" fill="#C2410C"/>
+        <path d="M 15 806 A 12 12 0 0 1 27 794 L 27 920 A 12 12 0 0 1 15 908 Z" fill="#C2410C"/>
 
-        <text x="${(W + 12) / 2}" y="822" 
+        <text x="${(W + 12) / 2}" y="850" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="40" 
               font-weight="900" 
@@ -282,7 +282,7 @@ export async function POST(req: NextRequest) {
           ${card2Price}
         </text>
 
-        <text x="${(W + 12) / 2}" y="862" 
+        <text x="${(W + 12) / 2}" y="890" 
               font-family="Montserrat, Inter, Arial, sans-serif" 
               font-size="24" 
               font-weight="900" 

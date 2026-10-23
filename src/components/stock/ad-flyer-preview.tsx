@@ -273,11 +273,11 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       ctx.save()
 
       // Ventana expandida al ancho total: de x: ox a ox + w (ancho total w, sin márgenes laterales)
-      // Empieza detrás de la caja de título (190) y se extiende detrás de la cinta blanca inferior (605)
+      // Empieza detrás de la caja de título (175) y se extiende detrás de la cinta blanca inferior (625)
       const slotX = ox
-      const slotY = oy + Math.round(190 * sy)
+      const slotY = oy + Math.round(175 * sy)
       const slotW = w
-      const slotH = Math.round(415 * sy)
+      const slotH = Math.round(450 * sy)
 
       const imgW = carImg.naturalWidth
       const imgH = carImg.naturalHeight
@@ -328,9 +328,9 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       ctx.restore()
     }
 
-    // 2. Title Box (Canonical x: 28..543, y: 152..258, w: 515, h: 106, rx: 12)
+    // 2. Title Box (Canonical x: 28..543, y: 138..244, w: 515, h: 106, rx: 12)
     const titleLeft = ox + 28 * sx
-    const titleTop = oy + 152 * sy
+    const titleTop = oy + 138 * sy
     const titleWidth = 515 * sx
     const titleHeight = 106 * sy
 
@@ -357,9 +357,9 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     ctx.fillText(fields.subtitle.trim().toUpperCase(), ox + w / 2, titleTop + titleHeight * 0.74)
     ctx.restore()
 
-    // 3. Banner Ribbon (Canonical x: 24..547, y: 569..615, w: 523, h: 46, rx: 23)
+    // 3. Banner Ribbon (Canonical x: 24..547, y: 597..643, w: 523, h: 46, rx: 23)
     const bLeft = ox + 24 * sx
-    const bTop = oy + 569 * sy
+    const bTop = oy + 597 * sy
     const bW = 523 * sx
     const bH = 46 * sy
 
@@ -432,10 +432,10 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       }
 
       // Card 1 (Precio Final)
-      drawFullWidthCard(oy + 626 * sy, 126 * sy, fields.card1Price, fields.card1Sub)
+      drawFullWidthCard(oy + 654 * sy, 126 * sy, fields.card1Price, fields.card1Sub)
 
       // Card 2 (Financiación en Cuotas)
-      drawFullWidthCard(oy + 766 * sy, 126 * sy, fields.card2Price, fields.card2Sub)
+      drawFullWidthCard(oy + 794 * sy, 126 * sy, fields.card2Price, fields.card2Sub)
     } else {
       // 4 tarjetas cuadrícula clásica 2x2
       const drawCard = (
@@ -711,7 +711,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       <div
         className="absolute z-10 flex flex-col items-center justify-center px-1.5 py-0.5 rounded-xl border border-transparent hover:border-[#60A5FA60] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all shadow-md"
         style={{
-          top: '14.8%',
+          top: '13.5%',
           left: '4.9%',
           width: '90.2%',
           height: '10.3%',
@@ -739,7 +739,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       <div
         className="absolute z-10 flex items-center justify-center px-2 rounded-full border border-white/80 shadow-[0_2px_8px_rgba(0,0,0,0.18)] hover:border-[#60A5FA60] focus-within:border-[#60A5FA] focus-within:ring-1 focus-within:ring-[#60A5FA50] transition-all"
         style={{
-          top: '55.6%',
+          top: '58.3%',
           left: '4.2%',
           width: '91.6%',
           height: '4.5%',
@@ -764,7 +764,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
           <div
             className="absolute z-10 flex flex-col justify-center items-center text-center overflow-hidden pl-3 pr-2 py-0.5 rounded-xl border border-white/90 shadow-[0_4px_12px_rgba(0,0,0,0.22)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-2 focus-within:ring-[#60A5FA50] transition-all"
             style={{
-              top: '61.1%',
+              top: '63.9%',
               left: '2.6%',
               width: '94.8%',
               height: '12.3%',
@@ -793,7 +793,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
           <div
             className="absolute z-10 flex flex-col justify-center items-center text-center overflow-hidden pl-3 pr-2 py-0.5 rounded-xl border border-white/90 shadow-[0_4px_12px_rgba(0,0,0,0.22)] hover:border-[#60A5FA] focus-within:border-[#60A5FA] focus-within:ring-2 focus-within:ring-[#60A5FA50] transition-all"
             style={{
-              top: '74.8%',
+              top: '77.5%',
               left: '2.6%',
               width: '94.8%',
               height: '12.3%',
@@ -1008,8 +1008,8 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                 <div
                   className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
                   style={{
-                    top: '18.5%',
-                    height: '41.5%',
+                    top: '17.0%',
+                    height: '44.5%',
                     WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)',
                     maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)'
                   }}>
@@ -1047,8 +1047,8 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
               <div
                 className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
                 style={{
-                  top: '18.5%',
-                  height: '41.5%',
+                  top: '17.0%',
+                  height: '44.5%',
                   WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)',
                   maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)'
                 }}>
