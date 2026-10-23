@@ -267,15 +267,15 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     // 1. Dibujar la plantilla oficial enviada por el usuario como lienzo base
     ctx.drawImage(baseImg, ox, oy, w, h)
 
-    // 2. Si hay foto del vehículo, dibujarla con expansión y difuminado suave (fade sin líneas de corte)
+    // 2. Si hay foto del vehículo, dibujarla con expansión y difuminado suave (máscara alfa pura sin líneas de corte)
     if (carImg && carImg.naturalWidth > 0) {
       ctx.save()
 
-      // Ventana expandida del auto: de y: 220 a y: 575 (h: 355)
+      // Ventana expandida del auto: de y: 215 a y: 580 (h: 365)
       const slotX = ox
-      const slotY = oy + 220 * sy
+      const slotY = oy + 215 * sy
       const slotW = w
-      const slotH = 355 * sy
+      const slotH = 365 * sy
 
       const imgW = carImg.naturalWidth
       const imgH = carImg.naturalHeight
@@ -293,26 +293,37 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
       const drawX = slotX + Math.round((slotW - drawW) / 2)
       const drawY = slotY + Math.round((slotH - drawH) / 2)
 
-      // Dibujar auto centrado y expandido
-      ctx.drawImage(carImg, drawX, drawY, drawW, drawH)
+      // Usar canvas temporal con máscara de transparencia gradual pura para fusionar con el fondo oscuro
+      try {
+        const carCanvas = document.createElement('canvas')
+        carCanvas.width = drawW
+        carCanvas.height = drawH
+        const carCtx = carCanvas.getContext('2d')
 
-      // Difuminado suave superior (fade out hacia arriba)
-      const topFadeH = 65 * sy
-      const topFade = ctx.createLinearGradient(0, drawY - 2, 0, drawY + topFadeH)
-      topFade.addColorStop(0, '#070F1D')
-      topFade.addColorStop(0.4, 'rgba(7, 15, 29, 0.75)')
-      topFade.addColorStop(1, 'rgba(7, 15, 29, 0)')
-      ctx.fillStyle = topFade
-      ctx.fillRect(ox, drawY - 4, w, topFadeH + 4)
+        if (carCtx) {
+          carCtx.drawImage(carImg, 0, 0, drawW, drawH)
+          carCtx.globalCompositeOperation = 'destination-in'
 
-      // Difuminado suave inferior (fade out hacia abajo, fundiéndose con la base)
-      const btmFadeH = 65 * sy
-      const btmFade = ctx.createLinearGradient(0, drawY + drawH - btmFadeH, 0, drawY + drawH + 2)
-      btmFade.addColorStop(0, 'rgba(10, 21, 39, 0)')
-      btmFade.addColorStop(0.6, 'rgba(10, 21, 39, 0.75)')
-      btmFade.addColorStop(1, '#0A1527')
-      ctx.fillStyle = btmFade
-      ctx.fillRect(ox, drawY + drawH - btmFadeH, w, btmFadeH + 4)
+          const alphaGrad = carCtx.createLinearGradient(0, 0, 0, drawH)
+          alphaGrad.addColorStop(0, 'rgba(0,0,0,0)')
+          alphaGrad.addColorStop(0.08, 'rgba(0,0,0,0.3)')
+          alphaGrad.addColorStop(0.18, 'rgba(0,0,0,0.8)')
+          alphaGrad.addColorStop(0.28, 'rgba(0,0,0,1)')
+          alphaGrad.addColorStop(0.72, 'rgba(0,0,0,1)')
+          alphaGrad.addColorStop(0.82, 'rgba(0,0,0,0.8)')
+          alphaGrad.addColorStop(0.92, 'rgba(0,0,0,0.3)')
+          alphaGrad.addColorStop(1, 'rgba(0,0,0,0)')
+
+          carCtx.fillStyle = alphaGrad
+          carCtx.fillRect(0, 0, drawW, drawH)
+
+          ctx.drawImage(carCanvas, drawX, drawY)
+        } else {
+          ctx.drawImage(carImg, drawX, drawY, drawW, drawH)
+        }
+      } catch (e) {
+        ctx.drawImage(carImg, drawX, drawY, drawW, drawH)
+      }
 
       ctx.restore()
     }
@@ -947,42 +958,22 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-0"
               />
 
-              {/* Foto del auto expandida y fusionada con difuminado suave (fade sin recuadros duros) */}
+              {/* Foto del auto expandida y fusionada con difuminado suave invisible (sin líneas de corte) */}
               {carPhotoUrl && (
-                <>
-                  <div
-                    className="absolute inset-x-0 z-[2] flex items-center justify-center pointer-events-none select-none overflow-hidden"
-                    style={{
-                      top: '21.5%',
-                      height: '35.5%',
-                      maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.85) 10%, black 20%, black 80%, rgba(0,0,0,0.85) 90%, transparent 100%)',
-                      WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.85) 10%, black 20%, black 80%, rgba(0,0,0,0.85) 90%, transparent 100%)'
-                    }}>
-                    <img
-                      src={carPhotoUrl}
-                      alt={fields.title}
-                      className="w-full h-full object-contain object-center scale-105"
-                    />
-                  </div>
-                  {/* Gradiente de fusión suave superior */}
-                  <div
-                    className="absolute inset-x-0 pointer-events-none z-[3]"
-                    style={{
-                      top: '21.0%',
-                      height: '6.5%',
-                      background: 'linear-gradient(to bottom, #070F1D 0%, rgba(7, 15, 29, 0.75) 45%, transparent 100%)'
-                    }}
+                <div
+                  className="absolute inset-x-0 z-[2] flex items-center justify-center pointer-events-none select-none overflow-hidden"
+                  style={{
+                    top: '21.0%',
+                    height: '36.5%',
+                    maskImage: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.3) 6%, rgba(0,0,0,0.85) 16%, black 28%, black 72%, rgba(0,0,0,0.85) 84%, rgba(0,0,0,0.3) 94%, transparent 100%)',
+                    WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.3) 6%, rgba(0,0,0,0.85) 16%, black 28%, black 72%, rgba(0,0,0,0.85) 84%, rgba(0,0,0,0.3) 94%, transparent 100%)'
+                  }}>
+                  <img
+                    src={carPhotoUrl}
+                    alt={fields.title}
+                    className="w-full h-full object-contain object-center scale-105"
                   />
-                  {/* Gradiente de fusión suave inferior */}
-                  <div
-                    className="absolute inset-x-0 pointer-events-none z-[3]"
-                    style={{
-                      top: '51.5%',
-                      height: '6.0%',
-                      background: 'linear-gradient(to top, #0A1527 0%, rgba(10, 21, 39, 0.75) 45%, transparent 100%)'
-                    }}
-                  />
-                </>
+                </div>
               )}
 
               {/* In-place editable inputs overlay */}
@@ -1006,42 +997,22 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
               style={{ width: '280px', height: '502px' }}
             />
 
-            {/* Foto del auto expandida y fusionada con difuminado suave (fade sin recuadros duros) */}
+            {/* Foto del auto expandida y fusionada con difuminado suave invisible (sin líneas de corte) */}
             {carPhotoUrl && (
-              <>
-                <div
-                  className="absolute inset-x-0 z-[2] flex items-center justify-center pointer-events-none select-none overflow-hidden"
-                  style={{
-                    top: '21.5%',
-                    height: '35.5%',
-                    maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.85) 10%, black 20%, black 80%, rgba(0,0,0,0.85) 90%, transparent 100%)',
-                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.85) 10%, black 20%, black 80%, rgba(0,0,0,0.85) 90%, transparent 100%)'
-                  }}>
-                  <img
-                    src={carPhotoUrl}
-                    alt={fields.title}
-                    className="w-full h-full object-contain object-center scale-105"
-                  />
-                </div>
-                {/* Gradiente de fusión suave superior */}
-                <div
-                  className="absolute inset-x-0 pointer-events-none z-[3]"
-                  style={{
-                    top: '21.0%',
-                    height: '6.5%',
-                    background: 'linear-gradient(to bottom, #070F1D 0%, rgba(7, 15, 29, 0.75) 45%, transparent 100%)'
-                  }}
+              <div
+                className="absolute inset-x-0 z-[2] flex items-center justify-center pointer-events-none select-none overflow-hidden"
+                style={{
+                  top: '21.0%',
+                  height: '36.5%',
+                  maskImage: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.3) 6%, rgba(0,0,0,0.85) 16%, black 28%, black 72%, rgba(0,0,0,0.85) 84%, rgba(0,0,0,0.3) 94%, transparent 100%)',
+                  WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.3) 6%, rgba(0,0,0,0.85) 16%, black 28%, black 72%, rgba(0,0,0,0.85) 84%, rgba(0,0,0,0.3) 94%, transparent 100%)'
+                }}>
+                <img
+                  src={carPhotoUrl}
+                  alt={fields.title}
+                  className="w-full h-full object-contain object-center scale-105"
                 />
-                {/* Gradiente de fusión suave inferior */}
-                <div
-                  className="absolute inset-x-0 pointer-events-none z-[3]"
-                  style={{
-                    top: '51.5%',
-                    height: '6.0%',
-                    background: 'linear-gradient(to top, #0A1527 0%, rgba(10, 21, 39, 0.75) 45%, transparent 100%)'
-                  }}
-                />
-              </>
+              </div>
             )}
 
             {/* In-place editable inputs overlay */}
