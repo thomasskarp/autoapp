@@ -267,15 +267,16 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     // 1. Dibujar la plantilla oficial enviada por el usuario como lienzo base
     ctx.drawImage(baseImg, ox, oy, w, h)
 
-    // 2. Si hay foto del vehículo, expandirla al ancho total del lienzo 9:16 (sin márgenes laterales)
+    // 2. Si hay foto del vehículo, expandirla al ancho total del lienzo 9:16 (sin márgenes laterales) con difuminado suave fotográfico
     if (carImg && carImg.naturalWidth > 0) {
       ctx.save()
 
       // Ventana expandida al ancho total: de x: ox a ox + w (ancho total w, sin márgenes laterales)
+      // Empieza detrás de la caja de título (190) y se extiende detrás de la cinta blanca inferior (605)
       const slotX = ox
-      const slotY = oy + 215 * sy
+      const slotY = oy + Math.round(190 * sy)
       const slotW = w
-      const slotH = 360 * sy
+      const slotH = Math.round(415 * sy)
 
       const imgW = carImg.naturalWidth
       const imgH = carImg.naturalHeight
@@ -296,35 +297,33 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
         syCrop = Math.round((imgH - sHeight) / 2)
       }
 
-      // Dibujar foto del vehículo ocupando todo el ancho de borde a borde
-      ctx.drawImage(carImg, sxCrop, syCrop, sWidth, sHeight, slotX, slotY, slotW, slotH)
+      // Renderizar con canvas auxiliar para máscara de opacidad fotográfica (fade to transparent)
+      const offCanvas = document.createElement('canvas')
+      offCanvas.width = slotW
+      offCanvas.height = slotH
+      const offCtx = offCanvas.getContext('2d')
 
-      // Difuminado suave ÚNICAMENTE en el extremo superior
-      const topFadeH = 115 * sy
-      const topGrad = ctx.createLinearGradient(0, slotY, 0, slotY + topFadeH)
-      topGrad.addColorStop(0, '#060E1C')
-      topGrad.addColorStop(0.18, '#071120')
-      topGrad.addColorStop(0.40, 'rgba(7, 17, 32, 0.85)')
-      topGrad.addColorStop(0.65, 'rgba(7, 17, 32, 0.45)')
-      topGrad.addColorStop(0.85, 'rgba(7, 17, 32, 0.15)')
-      topGrad.addColorStop(1, 'rgba(7, 17, 32, 0)')
-      ctx.fillStyle = topGrad
-      ctx.fillRect(slotX, slotY - 2, slotW, topFadeH + 2)
+      if (offCtx) {
+        offCtx.drawImage(carImg, sxCrop, syCrop, sWidth, sHeight, 0, 0, slotW, slotH)
 
-      // Difuminado suave ÚNICAMENTE en el extremo inferior
-      const btmFadeH = 115 * sy
-      const btmY = slotY + slotH - btmFadeH
-      const btmGrad = ctx.createLinearGradient(0, btmY, 0, slotY + slotH)
-      btmGrad.addColorStop(0, 'rgba(6, 14, 28, 0)')
-      btmGrad.addColorStop(0.15, 'rgba(6, 14, 28, 0.15)')
-      btmGrad.addColorStop(0.35, 'rgba(6, 14, 28, 0.45)')
-      btmGrad.addColorStop(0.60, 'rgba(6, 14, 28, 0.85)')
-      btmGrad.addColorStop(0.82, '#071120')
-      btmGrad.addColorStop(1, '#060E1C')
-      ctx.fillStyle = btmGrad
-      ctx.fillRect(slotX, btmY, slotW, btmFadeH + 4)
+        offCtx.globalCompositeOperation = 'destination-in'
+        const maskGrad = offCtx.createLinearGradient(0, 0, 0, slotH)
+        maskGrad.addColorStop(0, 'rgba(0,0,0,0)')
+        maskGrad.addColorStop(0.10, 'rgba(0,0,0,0.15)')
+        maskGrad.addColorStop(0.24, 'rgba(0,0,0,0.60)')
+        maskGrad.addColorStop(0.38, 'rgba(0,0,0,1)')
+        maskGrad.addColorStop(0.68, 'rgba(0,0,0,1)')
+        maskGrad.addColorStop(0.82, 'rgba(0,0,0,0.60)')
+        maskGrad.addColorStop(0.94, 'rgba(0,0,0,0.15)')
+        maskGrad.addColorStop(1, 'rgba(0,0,0,0)')
+        offCtx.fillStyle = maskGrad
+        offCtx.fillRect(0, 0, slotW, slotH)
 
-      // Sin márgenes ni difuminados laterales
+        ctx.drawImage(offCanvas, slotX, slotY)
+      } else {
+        ctx.drawImage(carImg, sxCrop, syCrop, sWidth, sHeight, slotX, slotY, slotW, slotH)
+      }
+
       ctx.restore()
     }
 
@@ -958,36 +957,20 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-0"
               />
 
-              {/* Foto del auto expandida al ancho total 9:16 (sin márgenes laterales) con difuminado superior e inferior */}
+              {/* Foto del auto expandida al ancho total 9:16 (sin márgenes laterales) con difuminado suave fotográfico */}
               {carPhotoUrl && (
                 <div
                   className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
                   style={{
-                    top: '21.0%',
-                    height: '36.5%'
+                    top: '18.5%',
+                    height: '41.5%',
+                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)',
+                    maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)'
                   }}>
                   <img
                     src={carPhotoUrl}
                     alt={fields.title}
                     className="w-full h-full object-cover object-center"
-                  />
-
-                  {/* Difuminado suave ÚNICAMENTE en el extremo superior */}
-                  <div
-                    className="absolute inset-x-0 top-0 pointer-events-none"
-                    style={{
-                      height: '38%',
-                      background: 'linear-gradient(to bottom, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
-                    }}
-                  />
-
-                  {/* Difuminado suave ÚNICAMENTE en el extremo inferior */}
-                  <div
-                    className="absolute inset-x-0 bottom-0 pointer-events-none"
-                    style={{
-                      height: '40%',
-                      background: 'linear-gradient(to top, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
-                    }}
                   />
                 </div>
               )}
@@ -1013,36 +996,20 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
               style={{ width: '280px', height: '502px' }}
             />
 
-            {/* Foto del auto expandida al ancho total 9:16 (sin márgenes laterales) con difuminado superior e inferior */}
+            {/* Foto del auto expandida al ancho total 9:16 (sin márgenes laterales) con difuminado suave fotográfico */}
             {carPhotoUrl && (
               <div
                 className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
                 style={{
-                  top: '21.0%',
-                  height: '36.5%'
+                  top: '18.5%',
+                  height: '41.5%',
+                  WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)',
+                  maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.60) 24%, black 38%, black 68%, rgba(0,0,0,0.60) 82%, rgba(0,0,0,0.15) 94%, transparent 100%)'
                 }}>
                 <img
                   src={carPhotoUrl}
                   alt={fields.title}
                   className="w-full h-full object-cover object-center"
-                />
-
-                {/* Difuminado suave ÚNICAMENTE en el extremo superior */}
-                <div
-                  className="absolute inset-x-0 top-0 pointer-events-none"
-                  style={{
-                    height: '38%',
-                    background: 'linear-gradient(to bottom, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
-                  }}
-                />
-
-                {/* Difuminado suave ÚNICAMENTE en el extremo inferior */}
-                <div
-                  className="absolute inset-x-0 bottom-0 pointer-events-none"
-                  style={{
-                    height: '40%',
-                    background: 'linear-gradient(to top, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
-                  }}
                 />
               </div>
             )}

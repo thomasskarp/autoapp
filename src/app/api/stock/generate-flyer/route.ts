@@ -52,48 +52,44 @@ export async function POST(req: NextRequest) {
     const templatePath = path.join(process.cwd(), 'public', 'templates', 'plantilla_universal_clean.png')
     const templateBuffer = fs.readFileSync(templatePath)
 
+    const carHeight = 415
+    const carTop = 190
+
     // Redimensionar foto del auto cubriendo el ancho total del lienzo (sin márgenes laterales)
     const carResized = await sharp(bgBuffer)
-      .resize(W, 360, { fit: 'cover', position: 'center' })
+      .resize(W, carHeight, { fit: 'cover', position: 'center' })
       .toBuffer()
 
-    // Difuminado suave ÚNICAMENTE en los extremos superior e inferior
-    const fadeOverlaySvg = Buffer.from(`
-      <svg width="${W}" height="360" viewBox="0 0 ${W} 360" xmlns="http://www.w3.org/2000/svg">
+    // Máscara de opacidad fotográfica suave (fade to transparent) en extremos superior e inferior
+    const maskSvg = Buffer.from(`
+      <svg width="${W}" height="${carHeight}" viewBox="0 0 ${W} ${carHeight}" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="topFade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#060E1C" stop-opacity="1"/>
-            <stop offset="18%" stop-color="#071120" stop-opacity="0.90"/>
-            <stop offset="40%" stop-color="#071120" stop-opacity="0.80"/>
-            <stop offset="65%" stop-color="#071120" stop-opacity="0.40"/>
-            <stop offset="85%" stop-color="#071120" stop-opacity="0.10"/>
-            <stop offset="100%" stop-color="#071120" stop-opacity="0"/>
-          </linearGradient>
-          <linearGradient id="btmFade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#060E1C" stop-opacity="0"/>
-            <stop offset="15%" stop-color="#060E1C" stop-opacity="0.10"/>
-            <stop offset="35%" stop-color="#060E1C" stop-opacity="0.40"/>
-            <stop offset="60%" stop-color="#060E1C" stop-opacity="0.80"/>
-            <stop offset="82%" stop-color="#071120" stop-opacity="0.90"/>
-            <stop offset="100%" stop-color="#060E1C" stop-opacity="1"/>
+          <linearGradient id="fadeMask" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fff" stop-opacity="0"/>
+            <stop offset="10%" stop-color="#fff" stop-opacity="0.15"/>
+            <stop offset="24%" stop-color="#fff" stop-opacity="0.60"/>
+            <stop offset="38%" stop-color="#fff" stop-opacity="1"/>
+            <stop offset="68%" stop-color="#fff" stop-opacity="1"/>
+            <stop offset="82%" stop-color="#fff" stop-opacity="0.60"/>
+            <stop offset="94%" stop-color="#fff" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
           </linearGradient>
         </defs>
-        <rect x="0" y="0" width="${W}" height="115" fill="url(#topFade)"/>
-        <rect x="0" y="245" width="${W}" height="115" fill="url(#btmFade)"/>
+        <rect x="0" y="0" width="${W}" height="${carHeight}" fill="url(#fadeMask)"/>
       </svg>
     `)
 
-    // Montar foto del auto expandida y con difuminado suave sobre la plantilla oscura
+    const carMasked = await sharp(carResized)
+      .composite([{ input: maskSvg, blend: 'dest-in' }])
+      .png()
+      .toBuffer()
+
+    // Montar foto del auto con máscara de difuminado fotográfico directo sobre la plantilla base
     const resizedBg = await sharp(templateBuffer)
       .composite([
         {
-          input: carResized,
-          top: 215,
-          left: 0
-        },
-        {
-          input: fadeOverlaySvg,
-          top: 215,
+          input: carMasked,
+          top: carTop,
           left: 0
         }
       ])
