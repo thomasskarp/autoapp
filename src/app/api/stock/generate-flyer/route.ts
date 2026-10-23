@@ -52,44 +52,34 @@ export async function POST(req: NextRequest) {
     const templatePath = path.join(process.cwd(), 'public', 'templates', 'plantilla_universal_clean.png')
     const templateBuffer = fs.readFileSync(templatePath)
 
-    // Redimensionar foto del auto expandida (y: 215..580, h: 365)
+    // Redimensionar foto del auto cubriendo el ancho total del lienzo (sin márgenes laterales)
     const carResized = await sharp(bgBuffer)
-      .resize(W, 365, { fit: 'contain', background: { r: 7, g: 15, b: 29, alpha: 0 } })
+      .resize(W, 360, { fit: 'cover', position: 'center' })
       .toBuffer()
 
-    // Fusión de largo alcance superior e inferior (130px) que integra el fondo claro del auto con el azul oscuro de los banners
+    // Difuminado suave ÚNICAMENTE en los extremos superior e inferior
     const fadeOverlaySvg = Buffer.from(`
-      <svg width="${W}" height="365" viewBox="0 0 ${W} 365" xmlns="http://www.w3.org/2000/svg">
+      <svg width="${W}" height="360" viewBox="0 0 ${W} 360" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="topFade" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="#060E1C" stop-opacity="1"/>
-            <stop offset="18%" stop-color="#071120" stop-opacity="0.95"/>
-            <stop offset="42%" stop-color="#071120" stop-opacity="0.85"/>
-            <stop offset="68%" stop-color="#071120" stop-opacity="0.45"/>
-            <stop offset="88%" stop-color="#071120" stop-opacity="0.15"/>
+            <stop offset="18%" stop-color="#071120" stop-opacity="0.90"/>
+            <stop offset="40%" stop-color="#071120" stop-opacity="0.80"/>
+            <stop offset="65%" stop-color="#071120" stop-opacity="0.40"/>
+            <stop offset="85%" stop-color="#071120" stop-opacity="0.10"/>
             <stop offset="100%" stop-color="#071120" stop-opacity="0"/>
           </linearGradient>
           <linearGradient id="btmFade" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="#060E1C" stop-opacity="0"/>
-            <stop offset="12%" stop-color="#060E1C" stop-opacity="0.15"/>
-            <stop offset="32%" stop-color="#060E1C" stop-opacity="0.45"/>
-            <stop offset="58%" stop-color="#060E1C" stop-opacity="0.85"/>
-            <stop offset="82%" stop-color="#071120" stop-opacity="0.95"/>
+            <stop offset="15%" stop-color="#060E1C" stop-opacity="0.10"/>
+            <stop offset="35%" stop-color="#060E1C" stop-opacity="0.40"/>
+            <stop offset="60%" stop-color="#060E1C" stop-opacity="0.80"/>
+            <stop offset="82%" stop-color="#071120" stop-opacity="0.90"/>
             <stop offset="100%" stop-color="#060E1C" stop-opacity="1"/>
           </linearGradient>
-          <linearGradient id="leftFade" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stop-color="#060E1C" stop-opacity="1"/>
-            <stop offset="100%" stop-color="#060E1C" stop-opacity="0"/>
-          </linearGradient>
-          <linearGradient id="rightFade" x1="1" y1="0" x2="0" y2="0">
-            <stop offset="0%" stop-color="#060E1C" stop-opacity="1"/>
-            <stop offset="100%" stop-color="#060E1C" stop-opacity="0"/>
-          </linearGradient>
         </defs>
-        <rect x="0" y="0" width="${W}" height="135" fill="url(#topFade)"/>
-        <rect x="0" y="235" width="${W}" height="130" fill="url(#btmFade)"/>
-        <rect x="0" y="0" width="35" height="365" fill="url(#leftFade)"/>
-        <rect x="${W - 35}" y="0" width="35" height="365" fill="url(#rightFade)"/>
+        <rect x="0" y="0" width="${W}" height="115" fill="url(#topFade)"/>
+        <rect x="0" y="245" width="${W}" height="115" fill="url(#btmFade)"/>
       </svg>
     `)
 

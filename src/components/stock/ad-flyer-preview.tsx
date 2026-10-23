@@ -267,73 +267,64 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
     // 1. Dibujar la plantilla oficial enviada por el usuario como lienzo base
     ctx.drawImage(baseImg, ox, oy, w, h)
 
-    // 2. Si hay foto del vehículo, dibujarla con fusión/degradado de largo alcance
+    // 2. Si hay foto del vehículo, expandirla al ancho total del lienzo 9:16 (sin márgenes laterales)
     if (carImg && carImg.naturalWidth > 0) {
       ctx.save()
 
-      // Ventana expandida del auto: de y: 215 a y: 580 (h: 365)
+      // Ventana expandida al ancho total: de x: ox a ox + w (ancho total w, sin márgenes laterales)
       const slotX = ox
       const slotY = oy + 215 * sy
       const slotW = w
-      const slotH = 365 * sy
+      const slotH = 360 * sy
 
       const imgW = carImg.naturalWidth
       const imgH = carImg.naturalHeight
+      const renderRatio = slotW / slotH
       const imgRatio = imgW / imgH
 
-      let drawW = slotW
-      let drawH = Math.round(slotW / imgRatio)
+      // Cobertura completa del ancho total
+      let sWidth = imgW
+      let sHeight = imgH
+      let sxCrop = 0
+      let syCrop = 0
 
-      if (drawH > slotH) {
-        drawH = slotH
-        drawW = Math.round(slotH * imgRatio)
+      if (imgRatio > renderRatio) {
+        sWidth = Math.round(imgH * renderRatio)
+        sxCrop = Math.round((imgW - sWidth) / 2)
+      } else {
+        sHeight = Math.round(imgW / renderRatio)
+        syCrop = Math.round((imgH - sHeight) / 2)
       }
 
-      const drawX = slotX + Math.round((slotW - drawW) / 2)
-      const drawY = slotY + Math.round((slotH - drawH) / 2)
+      // Dibujar foto del vehículo ocupando todo el ancho de borde a borde
+      ctx.drawImage(carImg, sxCrop, syCrop, sWidth, sHeight, slotX, slotY, slotW, slotH)
 
-      // 1. Dibujar auto centrado
-      ctx.drawImage(carImg, drawX, drawY, drawW, drawH)
-
-      // 2. FUSIÓN DE LARGO ALCANCE SUPERIOR (125px): funde el fondo claro de la foto con el azul oscuro
-      const topFadeH = 125 * sy
-      const topGrad = ctx.createLinearGradient(0, drawY, 0, drawY + topFadeH)
+      // Difuminado suave ÚNICAMENTE en el extremo superior
+      const topFadeH = 115 * sy
+      const topGrad = ctx.createLinearGradient(0, slotY, 0, slotY + topFadeH)
       topGrad.addColorStop(0, '#060E1C')
-      topGrad.addColorStop(0.20, '#071120')
-      topGrad.addColorStop(0.42, 'rgba(7, 17, 32, 0.85)')
-      topGrad.addColorStop(0.68, 'rgba(7, 17, 32, 0.45)')
-      topGrad.addColorStop(0.88, 'rgba(7, 17, 32, 0.15)')
+      topGrad.addColorStop(0.18, '#071120')
+      topGrad.addColorStop(0.40, 'rgba(7, 17, 32, 0.85)')
+      topGrad.addColorStop(0.65, 'rgba(7, 17, 32, 0.45)')
+      topGrad.addColorStop(0.85, 'rgba(7, 17, 32, 0.15)')
       topGrad.addColorStop(1, 'rgba(7, 17, 32, 0)')
       ctx.fillStyle = topGrad
-      ctx.fillRect(ox, drawY - 2, w, topFadeH + 2)
+      ctx.fillRect(slotX, slotY - 2, slotW, topFadeH + 2)
 
-      // 3. FUSIÓN DE LARGO ALCANCE INFERIOR (125px): funde el fondo claro de la foto con el azul oscuro
-      const btmFadeH = 125 * sy
-      const btmY = drawY + drawH - btmFadeH
-      const btmGrad = ctx.createLinearGradient(0, btmY, 0, drawY + drawH)
+      // Difuminado suave ÚNICAMENTE en el extremo inferior
+      const btmFadeH = 115 * sy
+      const btmY = slotY + slotH - btmFadeH
+      const btmGrad = ctx.createLinearGradient(0, btmY, 0, slotY + slotH)
       btmGrad.addColorStop(0, 'rgba(6, 14, 28, 0)')
-      btmGrad.addColorStop(0.12, 'rgba(6, 14, 28, 0.15)')
-      btmGrad.addColorStop(0.32, 'rgba(6, 14, 28, 0.45)')
-      btmGrad.addColorStop(0.58, 'rgba(6, 14, 28, 0.85)')
-      btmGrad.addColorStop(0.80, '#071120')
+      btmGrad.addColorStop(0.15, 'rgba(6, 14, 28, 0.15)')
+      btmGrad.addColorStop(0.35, 'rgba(6, 14, 28, 0.45)')
+      btmGrad.addColorStop(0.60, 'rgba(6, 14, 28, 0.85)')
+      btmGrad.addColorStop(0.82, '#071120')
       btmGrad.addColorStop(1, '#060E1C')
       ctx.fillStyle = btmGrad
-      ctx.fillRect(ox, btmY, w, btmFadeH + 4)
+      ctx.fillRect(slotX, btmY, slotW, btmFadeH + 4)
 
-      // 4. Fusión lateral suave
-      const sideFadeW = 35 * sx
-      const leftGrad = ctx.createLinearGradient(ox, 0, ox + sideFadeW, 0)
-      leftGrad.addColorStop(0, '#060E1C')
-      leftGrad.addColorStop(1, 'rgba(6, 14, 28, 0)')
-      ctx.fillStyle = leftGrad
-      ctx.fillRect(ox, drawY, sideFadeW, drawH)
-
-      const rightGrad = ctx.createLinearGradient(ox + w - sideFadeW, 0, ox + w, 0)
-      rightGrad.addColorStop(0, 'rgba(6, 14, 28, 0)')
-      rightGrad.addColorStop(1, '#060E1C')
-      ctx.fillStyle = rightGrad
-      ctx.fillRect(ox + w - sideFadeW, drawY, sideFadeW, drawH)
-
+      // Sin márgenes ni difuminados laterales
       ctx.restore()
     }
 
@@ -967,7 +958,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-0"
               />
 
-              {/* Foto del auto expandida y fusionada con degradados de largo alcance */}
+              {/* Foto del auto expandida al ancho total 9:16 (sin márgenes laterales) con difuminado superior e inferior */}
               {carPhotoUrl && (
                 <div
                   className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
@@ -978,40 +969,24 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                   <img
                     src={carPhotoUrl}
                     alt={fields.title}
-                    className="w-full h-full object-contain object-center scale-105"
+                    className="w-full h-full object-cover object-center"
                   />
 
-                  {/* Fusión de largo alcance superior (funde el fondo claro con el azul oscuro) */}
+                  {/* Difuminado suave ÚNICAMENTE en el extremo superior */}
                   <div
                     className="absolute inset-x-0 top-0 pointer-events-none"
                     style={{
-                      height: '42%',
+                      height: '38%',
                       background: 'linear-gradient(to bottom, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
                     }}
                   />
 
-                  {/* Fusión de largo alcance inferior (funde el fondo claro con el azul oscuro) */}
+                  {/* Difuminado suave ÚNICAMENTE en el extremo inferior */}
                   <div
                     className="absolute inset-x-0 bottom-0 pointer-events-none"
                     style={{
-                      height: '44%',
+                      height: '40%',
                       background: 'linear-gradient(to top, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
-                    }}
-                  />
-
-                  {/* Fusión lateral suave */}
-                  <div
-                    className="absolute inset-y-0 left-0 pointer-events-none"
-                    style={{
-                      width: '7%',
-                      background: 'linear-gradient(to right, #060E1C 0%, transparent 100%)'
-                    }}
-                  />
-                  <div
-                    className="absolute inset-y-0 right-0 pointer-events-none"
-                    style={{
-                      width: '7%',
-                      background: 'linear-gradient(to left, #060E1C 0%, transparent 100%)'
                     }}
                   />
                 </div>
@@ -1038,7 +1013,7 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
               style={{ width: '280px', height: '502px' }}
             />
 
-            {/* Foto del auto expandida y fusionada con degradados de largo alcance */}
+            {/* Foto del auto expandida al ancho total 9:16 (sin márgenes laterales) con difuminado superior e inferior */}
             {carPhotoUrl && (
               <div
                 className="absolute inset-x-0 z-[2] pointer-events-none select-none overflow-hidden"
@@ -1049,40 +1024,24 @@ export const AdFlyerPreview = forwardRef<AdFlyerPreviewHandle, Props>(function A
                 <img
                   src={carPhotoUrl}
                   alt={fields.title}
-                  className="w-full h-full object-contain object-center scale-105"
+                  className="w-full h-full object-cover object-center"
                 />
 
-                {/* Fusión de largo alcance superior (funde el fondo claro con el azul oscuro) */}
+                {/* Difuminado suave ÚNICAMENTE en el extremo superior */}
                 <div
                   className="absolute inset-x-0 top-0 pointer-events-none"
                   style={{
-                    height: '42%',
+                    height: '38%',
                     background: 'linear-gradient(to bottom, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
                   }}
                 />
 
-                {/* Fusión de largo alcance inferior (funde el fondo claro con el azul oscuro) */}
+                {/* Difuminado suave ÚNICAMENTE en el extremo inferior */}
                 <div
                   className="absolute inset-x-0 bottom-0 pointer-events-none"
                   style={{
-                    height: '44%',
+                    height: '40%',
                     background: 'linear-gradient(to top, #060E1C 0%, #071120 18%, rgba(7, 17, 32, 0.85) 40%, rgba(7, 17, 32, 0.45) 65%, rgba(7, 17, 32, 0.15) 85%, transparent 100%)'
-                  }}
-                />
-
-                {/* Fusión lateral suave */}
-                <div
-                  className="absolute inset-y-0 left-0 pointer-events-none"
-                  style={{
-                    width: '7%',
-                    background: 'linear-gradient(to right, #060E1C 0%, transparent 100%)'
-                  }}
-                />
-                <div
-                  className="absolute inset-y-0 right-0 pointer-events-none"
-                  style={{
-                    width: '7%',
-                    background: 'linear-gradient(to left, #060E1C 0%, transparent 100%)'
                   }}
                 />
               </div>
