@@ -324,6 +324,14 @@ export async function publishToFacebookMarketplace(
   onStatus?.('Abriendo Facebook Marketplace para autocompletar...')
 
   // Encode lightweight metadata payload into URL hash to prevent Chrome about:blank#blocked URL length limits!
+  // CRITICAL FIX: Strip all base64 data URIs (data:...) from the URL hash.
+  // Passing base64 strings in window.open() causes URLs to exceed Chrome's limit (~32KB / 2MB)
+  // and immediately triggers Chrome's about:blank#blocked.
+  // The full data and all base64 images are already securely stored in chrome.storage.local via setExtensionStorage.
+  const httpPhotosOnly = (car.photoLinks || [])
+    .filter((l: string) => typeof l === 'string' && l.startsWith('http'))
+    .slice(0, 8)
+
   const lightweightMeta = {
     id: car.id,
     marca: car.marca,
@@ -340,17 +348,27 @@ export async function publishToFacebookMarketplace(
     Tipo_Carroceria: car.Tipo_Carroceria,
     Estado_Vehiculo: car.Estado_Vehiculo,
     Tipo_Vehiculo: car.Tipo_Vehiculo,
-    photoLinks: car.photoLinks.slice(0, 20),
-    imagenPath: car.imagenPath,
-    descripcion: car.descripcion
+    photoLinks: httpPhotosOnly,
+    imagenPath: (typeof car.imagenPath === 'string' && car.imagenPath.startsWith('http')) ? car.imagenPath : null,
+    descripcion: (car.descripcion || '').slice(0, 300)
   }
 
-  const encodedMeta = encodeURIComponent(JSON.stringify(lightweightMeta))
-  const targetUrl = `https://www.facebook.com/marketplace/create/vehicle#autoapp=${encodedMeta}`
+  let targetUrl = 'https://www.facebook.com/marketplace/create/vehicle'
+  try {
+    const encodedMeta = encodeURIComponent(JSON.stringify(lightweightMeta))
+    if (encodedMeta.length < 1500) {
+      targetUrl = `https://www.facebook.com/marketplace/create/vehicle#autoapp=${encodedMeta}`
+    } else {
+      targetUrl = `https://www.facebook.com/marketplace/create/vehicle#autoapp=ready`
+    }
+  } catch {
+    targetUrl = 'https://www.facebook.com/marketplace/create/vehicle'
+  }
 
-  setTimeout(() => {
-    window.open(targetUrl, '_blank')
-  }, 500)
+  const win = window.open(targetUrl, '_blank')
+  if (!win) {
+    window.location.href = targetUrl
+  }
 
   onStatus?.('¡Publicación iniciada en Facebook Marketplace!')
 }

@@ -2183,15 +2183,21 @@ async function init() {
 
   // 3. Si estamos en Facebook Marketplace
   if (window.location.hostname.includes('facebook.com')) {
-    let carData = hashPayload && hashPayload.platform === 'facebook' ? hashPayload.data : null
+    let carData = null
 
-    if (!carData && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    // Priorizar chrome.storage.local porque contiene las imágenes completas en base64
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       try {
         const stored = await chrome.storage.local.get(['fb_active_car', 'active_car'])
         if (stored && (stored.fb_active_car || stored.active_car)) {
           carData = stored.fb_active_car || stored.active_car
         }
       } catch (e) {}
+    }
+
+    // Fallback a hash si storage estuviera vacío
+    if (!carData && hashPayload && hashPayload.platform === 'facebook') {
+      carData = hashPayload.data
     }
 
     if (carData) {
