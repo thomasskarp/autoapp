@@ -1070,7 +1070,18 @@ async function prepareFacebookFiles(car, onProgress) {
     const startIndex = files.length
     for (let i = startIndex; i < Math.min(links.length, 20); i++) {
       const url = links[i]
+      if (!url || typeof url !== 'string') continue
       if (onProgress) onProgress(i + 1, links.length)
+
+      // Si la URL ya es data URI base64, convertir directamente sin background
+      if (url.startsWith('data:image')) {
+        const blob = base64ToBlob(url, 'image/jpeg')
+        if (blob) {
+          files.push(new File([blob], `vehiculo_${i + 1}.jpg`, { type: 'image/jpeg' }))
+          continue
+        }
+      }
+
       try {
         const bgBase64 = await fetchImageBase64FromBackground(url)
         if (bgBase64) {
@@ -2158,7 +2169,19 @@ async function init() {
     }
   } else if (hashPayload && hashPayload.platform === 'facebook') {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ fb_active_car: hashPayload.data, active_car: hashPayload.data })
+      try {
+        const stored = await chrome.storage.local.get(['fb_active_car', 'active_car'])
+        const currentCar = stored.fb_active_car || stored.active_car
+        // Si el storage ya tiene imágenes resueltas, NO borrarlas con el payload liviano del hash
+        if (currentCar && Array.isArray(currentCar.images) && currentCar.images.length > 0) {
+          const merged = { ...hashPayload.data, ...currentCar }
+          chrome.storage.local.set({ fb_active_car: merged, active_car: merged })
+        } else {
+          chrome.storage.local.set({ fb_active_car: hashPayload.data, active_car: hashPayload.data })
+        }
+      } catch (e) {
+        chrome.storage.local.set({ fb_active_car: hashPayload.data, active_car: hashPayload.data })
+      }
     }
   }
 
@@ -2195,9 +2218,18 @@ async function init() {
       } catch (e) {}
     }
 
-    // Fallback a hash si storage estuviera vacío
-    if (!carData && hashPayload && hashPayload.platform === 'facebook') {
-      carData = hashPayload.data
+    // Si viene del hash, fusionar con el storage para asegurar que las fotos y metadatos coexistan
+    if (hashPayload && hashPayload.platform === 'facebook') {
+      if (carData) {
+        carData = {
+          ...hashPayload.data,
+          ...carData,
+          images: (carData.images && carData.images.length > 0) ? carData.images : (hashPayload.data.images || []),
+          photoLinks: (carData.photoLinks && carData.photoLinks.length > 0) ? carData.photoLinks : (hashPayload.data.photoLinks || [])
+        }
+      } else {
+        carData = hashPayload.data
+      }
     }
 
     if (carData) {

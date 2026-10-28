@@ -36,17 +36,34 @@ export async function downloadImageAsBase64(url: string): Promise<string | null>
     if (url.startsWith('data:image')) return url
 
     // Route through local Next.js proxy to prevent CORS errors in browser
-    const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(url.trim())}`
+    const cleanUrl = url.trim()
+    const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(cleanUrl)}`
     
     // Add 8 second timeout to prevent infinite hangs
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 8000)
     
-    const response = await fetch(proxyUrl, { signal: controller.signal })
+    let response: Response | null = null
+    try {
+      response = await fetch(proxyUrl, { signal: controller.signal })
+    } catch {
+      // Direct fallback if proxy is busy or fails
+      try {
+        response = await fetch(cleanUrl, { signal: controller.signal })
+      } catch {}
+    }
     clearTimeout(timeoutId)
     
-    if (!response.ok) {
-      console.warn('[AutoApp Publisher] Proxy fetch non-ok status:', response.status, 'for url:', url)
+    if (!response || !response.ok) {
+      try {
+        // Direct attempt for public Supabase or external assets
+        const directRes = await fetch(cleanUrl)
+        if (directRes.ok) response = directRes
+      } catch {}
+    }
+
+    if (!response || !response.ok) {
+      console.warn('[AutoApp Publisher] Image fetch non-ok status:', response?.status, 'for url:', url)
       return null
     }
 
@@ -59,7 +76,7 @@ export async function downloadImageAsBase64(url: string): Promise<string | null>
       reader.readAsDataURL(blob)
     })
   } catch (err) {
-    console.error('[AutoApp Publisher] Error downloading image via proxy:', err)
+    console.error('[AutoApp Publisher] Error downloading image:', err)
     return null
   }
 }

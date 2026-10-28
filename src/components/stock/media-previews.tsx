@@ -790,6 +790,50 @@ const BOOK_SUGGESTIONS = [
   'Book 2'
 ]
 
+const compressImageForUpload = async (file: File): Promise<Blob> => {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) return resolve(file)
+
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const maxDim = 1920
+      let w = img.naturalWidth || img.width
+      let h = img.naturalHeight || img.height
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w)
+          w = maxDim
+        } else {
+          w = Math.round((w * maxDim) / h)
+          h = maxDim
+        }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return resolve(file)
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(img, 0, 0, w, h)
+      canvas.toBlob(
+        (blob) => {
+          resolve(blob || file)
+        },
+        'image/jpeg',
+        0.85
+      )
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(file)
+    }
+    img.src = url
+  })
+}
+
 export function BookUploadModal({ vehicle, onClose, onSaveBook }: BookUploadModalProps) {
   const [bookName, setBookName] = useState('Book Exterior')
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
@@ -834,11 +878,14 @@ export function BookUploadModal({ vehicle, onClose, onSaveBook }: BookUploadModa
       const uploadedUrls: string[] = []
 
       for (let i = 0; i < selectedFiles.length; i++) {
-        setUploadProgress(`Subiendo foto ${i + 1} de ${selectedFiles.length}...`)
+        setUploadProgress(`Procesando y subiendo foto ${i + 1} de ${selectedFiles.length}...`)
         const file = selectedFiles[i]
 
+        // Comprimir optimizadamente en el cliente (ideal para fotos de celular que pesan 5-15MB)
+        const compressedBlob = await compressImageForUpload(file)
+
         const fd = new FormData()
-        fd.append('file', file)
+        fd.append('file', compressedBlob, file.name.replace(/\.[^.]+$/, '') + '.jpg')
         fd.append('folder', 'books')
         fd.append('vehicleId', vehicle?.ID || 'vehicle')
 
@@ -851,7 +898,6 @@ export function BookUploadModal({ vehicle, onClose, onSaveBook }: BookUploadModa
           if (data.success && data.publicUrl) {
             uploadedUrls.push(data.publicUrl)
           } else {
-            // Fallback a base64 preview si falla la subida
             uploadedUrls.push(previews[i] || '')
           }
         } catch (err) {
