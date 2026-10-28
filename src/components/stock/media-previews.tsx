@@ -20,7 +20,6 @@ interface PhotoBookPreviewProps {
   onAddPhotos: (files: FileList | File[]) => void
   onDeletePhoto?: (idx: number) => void
   targetPlatform?: string | null
-  onApplyFlyerTemplate?: () => void
 }
 
 export function PhotoBookPreview({
@@ -30,8 +29,7 @@ export function PhotoBookPreview({
   onSelectIndex,
   onAddPhotos,
   onDeletePhoto,
-  targetPlatform,
-  onApplyFlyerTemplate
+  targetPlatform
 }: PhotoBookPreviewProps) {
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '9:16'>('1:1')
   const [copied, setCopied] = useState(false)
@@ -306,17 +304,6 @@ export function PhotoBookPreview({
             <span>Subir</span>
           </button>
         </div>
-
-        {onApplyFlyerTemplate && (
-          <button
-            type="button"
-            onClick={onApplyFlyerTemplate}
-            title="Aplicar la plantilla publicitaria oficial Okmmotors a esta foto"
-            className="w-full py-2 px-3 rounded-xl text-xs font-black bg-gradient-to-r from-[#EA580C] to-[#C2410C] hover:from-[#C2410C] hover:to-[#9A3412] text-white shadow-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer">
-            <Sparkles size={14} className="text-[#FDE047]" />
-            <span>🪄 Aplicar Plantilla Flyer Publicidad</span>
-          </button>
-        )}
 
         <input
           ref={fileInputRef}

@@ -21,7 +21,7 @@ import {
   X, Loader2, CheckCircle2, Copy, Sparkles, Check, Image as ImageIcon,
   Save, Bookmark, Plus, Trash2, FileText, ChevronDown, ExternalLink,
   MessageSquare, RefreshCw, Film, Megaphone, Video, Star,
-  Edit2, Upload, Cloud
+  Edit2, Upload
 } from 'lucide-react'
 import {
   CopyTemplate,
@@ -1501,15 +1501,6 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
 
               {/* BOOKS DE FOTOS ROW (UNIFICADO PARA FOTOS, REEL, VIDEO Y PUBLICIDAD) */}
               <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between px-0.5">
-                  <span className="text-[11px] font-bold text-[#8B8FA8] uppercase tracking-wider flex items-center gap-1.5">
-                    <ImageIcon size={12} className="text-[#38BDF8]" /> Books de Fotos del Auto
-                  </span>
-                  <span className="text-[11px] text-[#64748B]">
-                    {books.length} {books.length === 1 ? 'book disponible' : 'books disponibles'}
-                  </span>
-                </div>
-
                 <div className="flex items-center gap-3 overflow-x-auto py-1 custom-scrollbar">
                   {books.map((book) => {
                     const isSelected = selectedBookId === book.id
@@ -1540,20 +1531,15 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                         )}
 
                         <div className="relative z-10 flex items-center justify-between w-full">
-                          <div className="flex items-center gap-1.5">
-                            <div
-                              className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${
-                                isSelected ? 'font-black' : 'bg-black/60 text-white/40 border border-white/20'
-                              }`}
-                              style={isSelected ? {
-                                background: activeMeta.bg || '#38BDF8',
-                                color: targetPlatform === 'MELI' ? '#000000' : '#FFFFFF'
-                              } : undefined}>
-                              {isSelected ? <Check size={13} strokeWidth={3} /> : null}
-                            </div>
-                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#FACC15] text-black shadow-sm flex items-center gap-1">
-                              <ImageIcon size={9} /> {book.photos.length} FOTOS
-                            </span>
+                          <div
+                            className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${
+                              isSelected ? 'font-black' : 'bg-black/60 text-white/40 border border-white/20'
+                            }`}
+                            style={isSelected ? {
+                              background: activeMeta.bg || '#38BDF8',
+                              color: targetPlatform === 'MELI' ? '#000000' : '#FFFFFF'
+                            } : undefined}>
+                            {isSelected ? <Check size={13} strokeWidth={3} /> : null}
                           </div>
 
                           {!book.isDefault && (
@@ -1567,8 +1553,9 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                           )}
                         </div>
 
-                        <div className="relative z-10 bg-black/75 -mx-2.5 -mb-2.5 px-2.5 py-1.5 backdrop-blur-sm border-t border-white/10">
-                          <p className="text-xs font-bold text-white truncate">{book.name}</p>
+                        <div className="relative z-10 bg-black/80 -mx-2.5 -mb-2.5 px-3 py-1.5 backdrop-blur-sm border-t border-white/10 flex items-center justify-between">
+                          <p className="text-xs font-semibold text-white truncate">{book.name}</p>
+                          <span className="text-[11px] text-slate-400 font-medium">{book.photos.length} fotos</span>
                         </div>
                       </div>
                     )
@@ -1587,15 +1574,6 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
               {/* Si es Publicidad, mostramos además los diseños de flyer disponibles con el mismo formato */}
               {contentType === 'publicidad' && (
                 <div className="flex flex-col gap-2 pt-2 border-t border-[#1F2337]/60">
-                  <div className="flex items-center justify-between px-0.5">
-                    <span className="text-[11px] font-bold text-[#8B8FA8] uppercase tracking-wider flex items-center gap-1.5">
-                      <Megaphone size={12} className="text-[#38BDF8]" /> Diseños de Flyer Publicitario
-                    </span>
-                    <span className="text-[11px] text-[#64748B]">
-                      {availablePublicidades.length} {availablePublicidades.length === 1 ? 'diseño' : 'diseños'}
-                    </span>
-                  </div>
-
                   <div className="flex items-center gap-3 overflow-x-auto py-1 custom-scrollbar">
                     {availablePublicidades.map((pub) => {
                       const isSelected = selectedPublicidadId === pub.id
@@ -1636,9 +1614,6 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                                 } : undefined}>
                                 {isSelected ? <Check size={13} strokeWidth={3} /> : null}
                               </div>
-                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#38BDF8] text-black shadow-sm flex items-center gap-1">
-                                <Megaphone size={9} /> {pub.only0km ? '0KM' : 'FLYER'}
-                              </span>
                             </div>
 
                             <div className="flex items-center gap-1">
@@ -1667,8 +1642,9 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                             </div>
                           </div>
 
-                          <div className="relative z-10 bg-black/75 -mx-2.5 -mb-2.5 px-2.5 py-1.5 backdrop-blur-sm border-t border-white/10">
-                            <p className="text-xs font-bold text-white truncate">{pub.name}</p>
+                          <div className="relative z-10 bg-black/80 -mx-2.5 -mb-2.5 px-3 py-1.5 backdrop-blur-sm border-t border-white/10 flex items-center justify-between">
+                            <p className="text-xs font-semibold text-white truncate">{pub.name}</p>
+                            <span className="text-[11px] text-slate-400 font-medium">{pub.only0km ? '0KM' : 'Flyer'}</span>
                           </div>
                         </div>
                       )
@@ -1774,7 +1750,6 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                       onSelectIndex={setCurrentPhotoIndex}
                       onAddPhotos={handleAddPhotosToActiveBook}
                       targetPlatform={targetPlatform}
-                      onApplyFlyerTemplate={() => handleSelectContentType('publicidad')}
                     />
 
                     {/* Columna Derecha: Editor de Texto y Plantillas (Mismo tamaño y formato que Publicidad) */}
@@ -1795,12 +1770,6 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
                               ))}
                             </select>
                             <ChevronDown size={14} className="absolute right-2.5 top-2.5 text-[#FACC15] pointer-events-none" />
-                          </div>
-
-                          {/* Indicador de Sincronización en la Nube */}
-                          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#141824] border border-[#252A3D] text-[11px] text-[#A0A5BD]" title="Plantillas sincronizadas en la nube para todos los vendedores">
-                            <Cloud size={13} className="text-emerald-400" />
-                            <span className="font-semibold text-xs">En la nube</span>
                           </div>
 
                           {/* Borrar Plantilla */}
