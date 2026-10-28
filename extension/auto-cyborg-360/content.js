@@ -1103,12 +1103,21 @@ async function prepareFacebookFiles(car, onProgress) {
 // Inyección de fotos en el input de Facebook Marketplace (exactamente una sola vez por imagen)
 async function injectPhotosIntoFacebook(files) {
   if (!files || files.length === 0) return false
+
+  // 1. Guardia de sesión en memoria: si ya se inyectaron fotos en esta pestaña, no repetir NUNCA
+  if (window.__AUTO_CYBORG_PHOTOS_INJECTED__) {
+    console.log('🛑 [Auto-Cyborg] Guardia global activa: Las fotos ya fueron inyectadas en esta pestaña. Omitiendo duplicación.')
+    return true
+  }
+
   const fileInput = findFacebookFileInput()
   if (!fileInput) {
     console.warn('[Auto-Cyborg] No se encontró input[type="file"] en Facebook Marketplace, intentando vía dropzone...')
     const dropzone = findFacebookDropzone()
     if (dropzone) {
       try {
+        window.__AUTO_CYBORG_PHOTOS_INJECTED__ = true
+        isFacebookPhotosInjected = true
         const dt = new DataTransfer()
         for (const f of files) dt.items.add(f)
         dropzone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
@@ -1117,6 +1126,22 @@ async function injectPhotosIntoFacebook(files) {
       } catch (e) {}
     }
     return false
+  }
+
+  // 2. Guardia en el elemento input DOM
+  if (fileInput.dataset.autoappInjected === 'true') {
+    console.log('🛑 [Auto-Cyborg] Este input[type="file"] ya recibió las fotos previamente. Omitiendo.')
+    return true
+  }
+
+  // 3. Inspeccionar el DOM de Facebook para ver si ya existen tarjetas/previews de fotos subidas
+  const existingPreviews = document.querySelectorAll('div[aria-label*="Eliminar" i], div[aria-label*="Delete" i], div[aria-label*="Remove" i], button[aria-label*="Eliminar" i], button[aria-label*="Delete" i], button[aria-label*="Remove" i]')
+  if (existingPreviews.length >= files.length) {
+    console.log(`🛑 [Auto-Cyborg] Ya se detectaron ${existingPreviews.length} foto(s) en Facebook Marketplace. Omitiendo subida duplicada.`)
+    fileInput.dataset.autoappInjected = 'true'
+    window.__AUTO_CYBORG_PHOTOS_INJECTED__ = true
+    isFacebookPhotosInjected = true
+    return true
   }
 
   try {
@@ -1135,8 +1160,14 @@ async function injectPhotosIntoFacebook(files) {
       dt.items.add(f)
     }
 
+    // Bloquear inmediatamente para que ningún tick concurrente vuelva a entrar
+    fileInput.dataset.autoappInjected = 'true'
+    window.__AUTO_CYBORG_PHOTOS_INJECTED__ = true
+    isFacebookPhotosInjected = true
+
     fileInput.files = dt.files
-    fileInput.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+    // CRÍTICO: Disparar ÚNICAMENTE evento 'change'.
+    // En React, disparar 'input' y luego 'change' en un input de tipo file hace que React ejecute la subida dos veces, duplicando las fotos de 6 a 12.
     fileInput.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
 
     console.log(`✅ [Auto-Cyborg] ${uniqueFiles.length} foto(s) inyectada(s) exactamente una sola vez en Facebook Marketplace!`)
@@ -1897,14 +1928,15 @@ async function runFacebookVehicleAutomation(car) {
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 2: SUBIR FOTOS (ahora que el tipo de vehículo abrió el formulario)
   // ─────────────────────────────────────────────────────────────────────────
-  if (!isFacebookPhotosInjected) {
+  if (!isFacebookPhotosInjected && !window.__AUTO_CYBORG_PHOTOS_INJECTED__) {
     const fileInput = findFacebookFileInput()
-    if (fileInput) {
+    if (fileInput && fileInput.dataset.autoappInjected !== 'true') {
       const files = await prepareFacebookFiles(car)
       if (files.length > 0) {
         const ok = await injectPhotosIntoFacebook(files)
         if (ok) {
           isFacebookPhotosInjected = true
+          window.__AUTO_CYBORG_PHOTOS_INJECTED__ = true
           actionsDone = true
           console.log(`✅ [Auto-Cyborg] ${files.length} fotos inyectadas en Marketplace.`)
           await new Promise(r => setTimeout(r, 300))
@@ -2102,9 +2134,11 @@ async function initFacebookMarketplaceAutomation(carData) {
     return
   }
 
-  // Reset de estado para el nuevo vehículo
-  cachedFacebookFiles = []
-  isFacebookPhotosInjected = false
+  // Reset de estado para el nuevo vehículo SOLO si no se inyectaron fotos aún
+  if (!window.__AUTO_CYBORG_PHOTOS_INJECTED__ && !isFacebookPhotosInjected) {
+    cachedFacebookFiles = []
+    isFacebookPhotosInjected = false
+  }
 
   console.log('🤖 [Auto-Cyborg 360] Iniciando flujo automático de Facebook Marketplace con:', carData)
   const car = carData
@@ -2129,6 +2163,10 @@ async function initFacebookMarketplaceAutomation(carData) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function init() {
+  // Evitar ejecuciones duplicadas en iframes internos de Facebook
+  if (window.self !== window.top) {
+    return
+  }
   // 1. Si estamos en AutoApp (localhost / 127.0.0.1 / vercel / autoapp)
   const isAutoApp = window.location.hostname.includes('localhost') || 
                     window.location.hostname.includes('127.0.0.1') || 
@@ -2256,6 +2294,12 @@ async function init() {
 
 // Escuchar cambios de hash dinámicos en WhatsApp Web y Facebook Marketplace
 window.addEventListener('hashchange', () => {
+  if (window.location.hostname.includes('facebook.com')) {
+    // Si ya se inyectaron fotos o la automatización está corriendo en Facebook, ignorar cambios cosméticos de hash
+    if (isFacebookPhotosInjected || window.__AUTO_CYBORG_PHOTOS_INJECTED__ || facebookAutomationLoopInterval) {
+      return
+    }
+  }
   if (window.location.hostname.includes('whatsapp.com') || window.location.hostname.includes('facebook.com')) {
     init()
   }

@@ -307,7 +307,8 @@ export async function publishToFacebookMarketplace(
   })
   
   const resolvedImages = await Promise.all(imagePromises)
-  const imagePayloads = resolvedImages.filter(Boolean) as string[]
+  // Garantizar unicidad absoluta de imágenes para no repetir fotos
+  const imagePayloads = Array.from(new Set(resolvedImages.filter(Boolean) as string[]))
 
   const payload = {
     ...car,
@@ -409,7 +410,8 @@ export async function publishToInstagramFeed(
   })
   
   const resolvedImages = await Promise.all(imagePromises)
-  const imagePayloads = resolvedImages.filter(Boolean) as string[]
+  // Garantizar unicidad absoluta de imágenes para no repetir fotos
+  const imagePayloads = Array.from(new Set(resolvedImages.filter(Boolean) as string[]))
 
   const fullTitle = `${car.marca} ${car.modelo} ${car.anio}`.trim()
   const defaultIGCaption = [
