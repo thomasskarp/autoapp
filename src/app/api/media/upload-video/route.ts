@@ -114,7 +114,8 @@ export async function POST(req: Request) {
       contentType = 'video/mp4'
     }
 
-    const fileName = `${folder}/${vehicleId}_${Date.now()}.${extension}`
+    const rand = Math.random().toString(36).substring(2, 7)
+    const fileName = `${folder}/${vehicleId}_${Date.now()}_${rand}.${extension}`
 
     const { error } = await supabase.storage
       .from('vehicle-images')

@@ -42,6 +42,7 @@ const VideoReelModal = dynamic(
 import {
   VehiclePhotoBook,
   getVehicleBooks,
+  fetchVehicleBooks,
   saveVehicleBooks
 } from './vehicle-media-books'
 import {
@@ -845,13 +846,32 @@ export function PublishModal({ vehicle, onClose, initialPlatform }: Props) {
       const photos = getAllVehiclePhotos(vehicle)
       setAllPhotos(photos)
 
-      // Load Books
+      // Load Books (instantaneo desde cache local)
       const loadedBooks = getVehicleBooks(vehicle.ID, photos)
       setBooks(loadedBooks)
       const initialBook = loadedBooks[0] || null
       if (initialBook) {
         setSelectedBookId(initialBook.id)
       }
+
+      // Sincronizar books desde la nube (Supabase)
+      fetchVehicleBooks(vehicle.ID, photos).then((remoteBooks) => {
+        if (remoteBooks && remoteBooks.length > 0) {
+          setBooks(remoteBooks)
+          setSelectedBookId(prevId => {
+            const found = remoteBooks.find(b => b.id === prevId)
+            if (found) {
+              if (initialType !== 'publicidad') {
+                setSelectedPhotos(found.photos)
+              }
+              return found.id
+            }
+            return remoteBooks[0]?.id || ''
+          })
+        }
+      }).catch(err => {
+        console.warn('[publish-modal] Error sincronizando books de la nube:', err)
+      })
 
       const initialPortada = photos[0] || ''
       const defaultAd = compileDefaultAdData(vehicle, initialPortada)

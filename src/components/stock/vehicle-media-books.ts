@@ -69,12 +69,101 @@ export function getVehicleBooks(vehicleId: string, defaultPhotos: string[]): Veh
   return [defaultBook]
 }
 
-export function saveVehicleBooks(vehicleId: string, books: VehiclePhotoBook[]): void {
+/**
+ * Consulta los books guardados en la nube (Supabase) y sincroniza con localStorage.
+ * Si el dispositivo local tiene books que aún no se subieron a la nube (ej: cargados desde el celular),
+ * los fusiona y los sube a la base de datos automáticamente.
+ */
+export async function fetchVehicleBooks(vehicleId: string, defaultPhotos: string[]): Promise<VehiclePhotoBook[]> {
+  const defaultBook: VehiclePhotoBook = {
+    id: `book-default-${vehicleId || 'default'}`,
+    vehicleId,
+    name: 'Book Principal',
+    photos: defaultPhotos,
+    coverPhoto: defaultPhotos[0] || '',
+    isDefault: true,
+    createdAt: new Date().toISOString()
+  }
+
+  if (typeof window === 'undefined' || !vehicleId) {
+    return [defaultBook]
+  }
+
+  // 1. Obtener libros locales existentes para detectar si hay alguno sin sincronizar
+  let localCustomBooks: VehiclePhotoBook[] = []
+  try {
+    const rawLocal = localStorage.getItem(`autoapp_vehicle_books_${vehicleId}`)
+    if (rawLocal) {
+      const parsed = JSON.parse(rawLocal)
+      if (Array.isArray(parsed)) {
+        localCustomBooks = parsed.filter((b: VehiclePhotoBook) => !b.isDefault)
+      }
+    }
+  } catch (e) {}
+
+  try {
+    const res = await fetch(`/api/vehicles/books?vehicleId=${encodeURIComponent(vehicleId)}`, {
+      cache: 'no-store'
+    })
+    const data = await res.json()
+
+    if (data.success && Array.isArray(data.books)) {
+      const remoteCustomBooks: VehiclePhotoBook[] = data.books.filter((b: VehiclePhotoBook) => !b.isDefault)
+
+      let finalCustomBooks = [...remoteCustomBooks]
+      let needsSyncToServer = false
+
+      // Fusionar libros locales no presentes en el servidor (ej: creados offline o en celular previo al sync)
+      for (const localBook of localCustomBooks) {
+        const exists = finalCustomBooks.some(rb => rb.id === localBook.id || rb.name === localBook.name)
+        if (!exists) {
+          finalCustomBooks.push(localBook)
+          needsSyncToServer = true
+        }
+      }
+
+      const mergedDefault = {
+        ...defaultBook,
+        photos: defaultPhotos.length > 0 ? defaultPhotos : (data.books.find((b: any) => b.isDefault)?.photos || [])
+      }
+      const fullList = [mergedDefault, ...finalCustomBooks]
+
+      // Guardar en localStorage para acceso inmediato posterior
+      localStorage.setItem(`autoapp_vehicle_books_${vehicleId}`, JSON.stringify(fullList))
+
+      // Si había libros locales pendientes, subirlos a la nube
+      if (needsSyncToServer) {
+        saveVehicleBooks(vehicleId, fullList).catch(() => {})
+      }
+
+      return fullList
+    }
+  } catch (err) {
+    console.warn('[fetchVehicleBooks] Error consultando libros en la nube, usando local:', err)
+  }
+
+  return getVehicleBooks(vehicleId, defaultPhotos)
+}
+
+export async function saveVehicleBooks(vehicleId: string, books: VehiclePhotoBook[]): Promise<void> {
   if (typeof window === 'undefined' || !vehicleId) return
+
+  // 1. Guardar inmediatamente en localStorage (UI instantánea)
   try {
     localStorage.setItem(`autoapp_vehicle_books_${vehicleId}`, JSON.stringify(books))
   } catch (e) {
-    console.warn('Error saving vehicle books:', e)
+    console.warn('Error saving vehicle books locally:', e)
+  }
+
+  // 2. Persistir en la nube (Supabase) para sincronización entre celular y PC
+  try {
+    await fetch('/api/vehicles/books', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vehicleId, books })
+    })
+  } catch (e) {
+    console.warn('Error syncing vehicle books to cloud:', e)
   }
 }
 
